@@ -34,8 +34,9 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Agentic browser control** — reads an accessible map of the page and clicks,
   types, selects, scrolls, hovers, double/right-clicks, drags, and presses
   keyboard shortcuts, all by element reference.
-- **Optional vision** — when enabled, the agent can capture a screenshot so a
-  multimodal model can *see* the page (canvas apps, image-only UIs, layout).
+- **Vision (on by default)** — the agent can capture a screenshot so a
+  multimodal model can *see* the page (images, canvas apps, visual layout). Turn
+  it off in Settings if you use a text-only model.
 - **Optional developer tools** — read the page's console messages and network
   requests to debug ("why is this page erroring?"), and a run-JavaScript escape
   hatch for when the other tools aren't enough. Both opt-in in Settings.

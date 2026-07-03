@@ -70,6 +70,7 @@ export async function runAgent(deps) {
   const touchedTabs = new Set(); // tabs we showed the activity overlay on
   let observedOrigin = null; // origin of the page the agent last read
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
+  let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
   const ctx = {
     getTabId: async () => focusedTabId,
@@ -137,6 +138,12 @@ export async function runAgent(deps) {
       if (signal.aborted) {
         emit({ kind: "aborted" });
         return;
+      }
+      if (sentImage) {
+        emit({
+          kind: "warning",
+          text: "That request included a screenshot, which the model rejected — it may be text-only. Switch to a multimodal model (e.g. gpt-4o-mini, gpt-4o, claude-3.5-sonnet) or turn off vision in Settings.",
+        });
       }
       emit({ kind: "error", error: String(e.message || e) });
       return;
@@ -323,6 +330,7 @@ export async function runAgent(deps) {
         content: "Here " + (pendingImages.length > 1 ? "are the screenshots" : "is the screenshot") + " you requested:",
         images: pendingImages,
       });
+      sentImage = true;
       emit({ kind: "tool_end", name: "take_screenshot", ok: true, summary: "attached image to the conversation" });
     }
   }

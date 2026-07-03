@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Vision is now on by default** (matches other browser agents). Screenshots are
+  still on-demand, so the model only captures the page when it needs to see. If a
+  text-only model rejects the screenshot, the agent now surfaces a clear hint to
+  switch models or disable vision, instead of a cryptic provider error.
+
 ### Added
 
 - **MCP tool servers:** connect remote Model Context Protocol servers (Streamable
