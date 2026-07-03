@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **"Need help choosing a model?" explainer in Settings.** A collapsible note in
+  the Providers section explains that the agent needs a model with **tool/function
+  calling** (required) and **vision** (recommended), warns that within a family
+  often only a specific variant sees images (e.g. GLM's `-V`, DeepSeek's `VL`),
+  and offers an easy paste-and-go pick (`openai/gpt-4o`, or the open
+  `qwen/qwen2.5-vl-72b-instruct`).
 - **Approval selector under the chat box.** A one-click segmented control
   (Plan / Ask / Auto) directly below the composer lets you switch autonomy mode
   without opening Settings. It stays in sync with the Behavior setting both ways,

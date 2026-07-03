@@ -20,6 +20,40 @@
         <h2>1. Providers</h2>
         <p class="hint">Add one or more model providers, then pick the one to use.</p>
 
+        <details class="model-help">
+          <summary>Need help choosing a model that works well?</summary>
+          <div class="model-help-body">
+            <p>
+              OpenSidekick drives your browser by <strong>calling tools</strong>
+              and (when Vision is on) <strong>looking at screenshots</strong>, so
+              pick a model that supports both:
+            </p>
+            <ul>
+              <li>
+                <strong>Tool / function calling — required.</strong> Without it the
+                agent can't click, type, or navigate at all.
+              </li>
+              <li>
+                <strong>Vision (image input) — recommended.</strong> It's on by
+                default. Without it, anything that needs to <em>see</em> the page
+                (reading an image, a chart, a screenshot) won't work.
+              </li>
+            </ul>
+            <p class="warn">
+              Heads up: within a model family, often only a specific variant can
+              see images — e.g. GLM's <code>-V</code> variant, or DeepSeek's
+              <code>VL</code> line. The plain text / "reasoning" model with a
+              near-identical name usually <strong>can't</strong>.
+            </p>
+            <p>
+              <strong>Easy pick — just paste and go:</strong> on OpenRouter, use
+              <code>openai/gpt-4o</code> (tools + vision, works out of the box).
+              Prefer an open model? <code>qwen/qwen2.5-vl-72b-instruct</code> is a
+              good vision + tools alternative.
+            </p>
+          </div>
+        </details>
+
         <div class="add-row">
           <select id="preset-select">
             <option value="">Add a provider…</option>

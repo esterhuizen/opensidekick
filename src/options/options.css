@@ -71,6 +71,45 @@ header h1 {
   font-size: 13px;
   font-style: italic;
 }
+
+.model-help {
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.model-help > summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.model-help[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.model-help-body {
+  padding: 6px 14px 10px;
+  line-height: 1.5;
+}
+.model-help-body ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+.model-help-body li {
+  margin: 4px 0;
+}
+.model-help-body .warn {
+  color: #d97706;
+}
+.model-help-body code {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
 .add-row {
   display: flex;
   gap: 8px;
