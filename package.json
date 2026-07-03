@@ -12,6 +12,7 @@
     "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs",
     "test:e2e": "node test/e2e.test.mjs",
     "test": "npm run test:unit",
+    "shots": "node test/screenshots.mjs",
     "zip": "rm -f opensidekick.zip && zip -r opensidekick.zip manifest.json src icons LICENSE -x '*.DS_Store'"
   },
   "devDependencies": {

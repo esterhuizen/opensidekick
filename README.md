@@ -11,7 +11,9 @@ provider you choose.
 
 MIT licensed. No account. No telemetry. No middleman.
 
-<!-- Add a screenshot / demo GIF here. -->
+![OpenSidekick reading a page and filling a form on the user's behalf](store/screenshots/01-act.png)
+
+<sub>More: [bring your own model](store/screenshots/02-providers.png) · [summarize & extract](store/screenshots/03-summarize.png)</sub>
 
 ---
 

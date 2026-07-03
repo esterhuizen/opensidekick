@@ -86,7 +86,8 @@ function onSubmit(e) {
   const text = els.input.value.trim();
   if (!text || running) return;
   els.empty.hidden = true;
-  addUserMessage(text);
+  // The user bubble is rendered from the worker's `user_echo` event so that
+  // runs triggered by anything (composer, context menu) show consistently.
   els.input.value = "";
   autoGrow();
   refreshContextHint();
@@ -114,6 +115,10 @@ function handleEvent(ev) {
         els.input.value = ev.task;
         autoGrow();
       }
+      break;
+    case "user_echo":
+      els.empty.hidden = true;
+      addUserMessage(ev.text);
       break;
     case "assistant_start":
       startAssistant();

@@ -6,6 +6,9 @@ node_modules/
 dist/
 web-ext-artifacts/
 
+# Raw (unframed) screenshot intermediates — only the composed 01/02/03 are tracked
+store/screenshots/raw-*.png
+
 # Local secrets — never commit API keys
 *.local
 .env

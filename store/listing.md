@@ -66,8 +66,11 @@ Open source: https://github.com/esterhuizen/opensidekick
 ```
 
 **Screenshots:** 1280×800 or 640×400 PNG/JPEG (at least one, up to five).
-Suggested shots: (1) the side panel summarizing a page, (2) an agentic task with
-the action log visible, (3) the Settings/provider screen.
+Three ready-to-upload 1280×800 shots are generated into `store/screenshots/`:
+`01-act.png` (agentic action + log), `02-providers.png` (bring-your-own-model
+settings), `03-summarize.png` (summarize/extract). Regenerate any time with
+`npm run shots` (needs Playwright's Chromium; on a headless box run it under
+`xvfb-run`). They're composed from real captures of the running extension.
 
 **Small promo tile** (optional): 440×280.
 
