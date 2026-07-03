@@ -11,9 +11,9 @@ provider you choose.
 
 MIT licensed. No account. No telemetry. No middleman.
 
-![OpenSidekick reading a page and filling a form on the user's behalf](store/screenshots/01-act.png)
+![OpenSidekick reading a page and filling a form on the user's behalf](assets/screenshots/01-act.png)
 
-<sub>More: [bring your own model](store/screenshots/02-providers.png) · [summarize & extract](store/screenshots/03-summarize.png)</sub>
+<sub>More: [bring your own model](assets/screenshots/02-providers.png) · [summarize & extract](assets/screenshots/03-summarize.png)</sub>
 
 ---
 
@@ -208,11 +208,6 @@ src/sidepanel/                chat UI
 src/options/                  settings UI
 scripts/generate-icons.mjs    dependency-free PNG icon generator
 ```
-
-## Publishing to the Chrome Web Store
-
-See [store/listing.md](store/listing.md) for ready-to-use listing copy and a
-step-by-step submission checklist.
 
 ## License
 

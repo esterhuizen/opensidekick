@@ -2,7 +2,7 @@
 // extension UI in Chromium against a mock model, then composing each capture
 // into a titled marketing scene.
 //
-// Output: store/screenshots/01-act.png, 02-providers.png, 03-summarize.png
+// Output: assets/screenshots/01-act.png, 02-providers.png, 03-summarize.png
 // Run (headless server): xvfb-run -a node test/screenshots.mjs
 
 import http from "node:http";
@@ -14,7 +14,7 @@ import { chromium } from "playwright";
 import { STORAGE_KEY, MSG } from "../src/common/constants.js";
 
 const EXT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const OUT_DIR = path.join(EXT_DIR, "store", "screenshots");
+const OUT_DIR = path.join(EXT_DIR, "assets", "screenshots");
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 // A realistic-looking page: an article with a newsletter form (for both the
@@ -223,7 +223,7 @@ async function renderScene(context, spec, outName) {
   await new Promise((r) => setTimeout(r, 200));
   await page.screenshot({ path: path.join(OUT_DIR, outName), clip: { x: 0, y: 0, width: 1280, height: 800 } });
   await page.close();
-  console.log("wrote store/screenshots/" + outName);
+  console.log("wrote assets/screenshots/" + outName);
 }
 
 async function main() {
@@ -290,7 +290,7 @@ async function main() {
     server.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
-  console.log("\nDone. Screenshots in store/screenshots/");
+  console.log("\nDone. Screenshots in assets/screenshots/");
 }
 
 main().catch((e) => {
