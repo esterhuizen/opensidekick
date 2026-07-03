@@ -610,6 +610,10 @@ async function main() {
     check(nc.events.some((e) => e.kind === "idle"), "unconfigured: emits idle so the panel isn't stuck in 'Working…'");
 
     // (2) The side panel gates first-run: shows the connect-a-model notice.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { providers: [], activeProviderId: null, settings: { autonomy: "ask" } },
+    ]);
     const gatePanel = await context.newPage();
     await gatePanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
     await gatePanel.waitForTimeout(400);
@@ -617,6 +621,16 @@ async function main() {
     const placeholder = await gatePanel.$eval("#input", (el) => el.placeholder).catch(() => "");
     check(noticeVisible, "gate: unconfigured side panel shows the 'connect a model' notice");
     check(/settings/i.test(placeholder), `gate: composer prompts to add a model (placeholder "${placeholder}")`);
+
+    // (3) The composer's approval selector sets autonomy without opening Settings.
+    const initialMode = await gatePanel.$eval("#autonomy .seg.active", (el) => el.dataset.mode).catch(() => "");
+    check(initialMode === "ask", `autonomy: selector reflects the stored mode (got "${initialMode}")`);
+    await gatePanel.click('#autonomy .seg[data-mode="auto"]');
+    await gatePanel.waitForTimeout(250);
+    const savedMode = await gatePanel.evaluate((key) => chrome.storage.local.get(key).then((r) => (r[key] && r[key].settings ? r[key].settings.autonomy : "")), STORAGE_KEY);
+    check(savedMode === "auto", `autonomy: clicking Auto persists settings.autonomy (got "${savedMode}")`);
+    const activeAfter = await gatePanel.$eval("#autonomy .seg.active", (el) => el.dataset.mode).catch(() => "");
+    check(activeAfter === "auto", `autonomy: the Auto segment becomes active (got "${activeAfter}")`);
     await gatePanel.close();
   } finally {
     server2.close();

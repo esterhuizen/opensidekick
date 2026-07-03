@@ -22,6 +22,7 @@ const els = {
   workflowsBtn: document.getElementById("workflows-btn"),
   recBanner: document.getElementById("rec-banner"),
   wfMenu: document.getElementById("wf-menu"),
+  autonomy: document.getElementById("autonomy"),
 };
 
 let savedPrompts = [];
@@ -56,6 +57,9 @@ async function init() {
 
   els.recordBtn.addEventListener("click", toggleRecording);
   els.workflowsBtn.addEventListener("click", toggleWorkflowsMenu);
+  els.autonomy.querySelectorAll(".seg").forEach((btn) =>
+    btn.addEventListener("click", () => setAutonomy(btn.dataset.mode)),
+  );
 
   // Saved prompts for the "/" menu — load now and keep in sync.
   loadPrompts();
@@ -115,6 +119,34 @@ async function refreshConfigured() {
   }
   const provider = (cfg.providers || []).find((p) => p.id === cfg.activeProviderId);
   updateConfiguredUI(!!(provider && cfg.activeModel));
+  setAutonomyUI((cfg.settings && cfg.settings.autonomy) || "ask");
+}
+
+// Reflect the active approval mode in the segmented control.
+function setAutonomyUI(mode) {
+  els.autonomy
+    .querySelectorAll(".seg")
+    .forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+}
+
+// Persist the chosen approval mode without touching the rest of the config.
+// Mirrors the Behavior radios in Settings; the storage listener keeps both views
+// (and the running agent's config) in sync.
+async function setAutonomy(mode) {
+  setAutonomyUI(mode); // optimistic
+  let cfg = {};
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    cfg = raw[STORAGE_KEY] || {};
+  } catch {
+    /* ignore */
+  }
+  cfg.settings = { ...(cfg.settings || {}), autonomy: mode };
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY]: cfg });
+  } catch {
+    /* ignore */
+  }
 }
 
 async function refreshContextHint() {

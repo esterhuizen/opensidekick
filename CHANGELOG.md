@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **Approval selector under the chat box.** A one-click segmented control
+  (Plan / Ask / Auto) directly below the composer lets you switch autonomy mode
+  without opening Settings. It stays in sync with the Behavior setting both ways,
+  and the change applies to your next run.
+
 ### Fixed
 
 - **First run no longer gets stuck on "Working…".** Sending a message before a

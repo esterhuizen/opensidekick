@@ -47,7 +47,9 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   - Anthropic Messages API (direct from the browser).
 - **Safety layer** — three autonomy modes: **plan-first** (the agent proposes a
   plan and the sites it will use, and waits for your approval before acting),
-  **ask before acting**, or **auto**. Plus a visible on-page activity indicator
+  **ask before acting**, or **auto** — switchable in one click from the
+  **Approval** selector right under the chat box (no trip to Settings). Plus a
+  visible on-page activity indicator
   with a Stop button so you always see when it's acting; a re-check that **blocks
   an action if the page changed origin** since it was last read (defends against
   redirects / injected navigation); **forced confirmation on purchase/delete-type

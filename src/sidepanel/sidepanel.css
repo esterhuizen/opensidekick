@@ -475,6 +475,50 @@ body {
   outline: 2px solid var(--accent);
   border-color: var(--accent);
 }
+.autonomy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.autonomy-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.seg {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.seg:last-child {
+  border-right: none;
+}
+.seg:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.seg.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
 .composer-row {
   display: flex;
   align-items: center;

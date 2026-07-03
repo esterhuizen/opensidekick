@@ -50,6 +50,35 @@
         rows="1"
         placeholder="Ask about or act on this page…  ( / for saved prompts )"
       ></textarea>
+      <div class="autonomy-row">
+        <span class="autonomy-label">Approval</span>
+        <div id="autonomy" class="segmented" role="group" aria-label="Approval mode">
+          <button
+            type="button"
+            class="seg"
+            data-mode="plan"
+            title="Plan first: I outline the steps and wait for your approval before acting (safest)"
+          >
+            Plan
+          </button>
+          <button
+            type="button"
+            class="seg"
+            data-mode="ask"
+            title="Ask first: I confirm before acting on a new site — allow once, always, or decline"
+          >
+            Ask
+          </button>
+          <button
+            type="button"
+            class="seg"
+            data-mode="auto"
+            title="Don't ask: I act without prompting on allowed sites (sensitive sites still confirm)"
+          >
+            Auto
+          </button>
+        </div>
+      </div>
       <div class="composer-row">
         <span id="context-hint" class="context-hint"></span>
         <div class="composer-buttons">
