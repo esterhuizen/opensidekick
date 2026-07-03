@@ -139,13 +139,22 @@ export async function runAgent(deps) {
         emit({ kind: "aborted" });
         return;
       }
-      if (sentImage) {
+      const msg = String(e.message || e);
+      // The provider tells us at runtime when the chosen model can't do tools —
+      // relay that as guidance rather than a raw 404. (Robust: reacts to what the
+      // provider actually reports, so no model list to keep up to date.)
+      if (/no endpoints found that support tool|support tool use|does not support tools|tools are not supported|function calling is not supported/i.test(msg)) {
+        emit({
+          kind: "warning",
+          text: "This model can't call tools, so it can't act on the page. Pick a model that supports tool/function calling — e.g. openai/gpt-4o on OpenRouter. Note: some vision models (like certain Qwen-VL endpoints) have no tool-calling endpoint, so they can see but can't act. See “Need help choosing a model?” in Settings.",
+        });
+      } else if (sentImage) {
         emit({
           kind: "warning",
           text: "That request included a screenshot, which the model rejected — it may be text-only. Switch to a multimodal model (e.g. gpt-4o-mini, gpt-4o, claude-3.5-sonnet) or turn off vision in Settings.",
         });
       }
-      emit({ kind: "error", error: String(e.message || e) });
+      emit({ kind: "error", error: msg });
       return;
     }
 

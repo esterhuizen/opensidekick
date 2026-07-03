@@ -40,16 +40,26 @@
               </li>
             </ul>
             <p class="warn">
-              Heads up: within a model family, often only a specific variant can
-              see images — e.g. GLM's <code>-V</code> variant, or DeepSeek's
-              <code>VL</code> line. The plain text / "reasoning" model with a
-              near-identical name usually <strong>can't</strong>.
+              Two things trip people up: (1) within a family, often only a
+              specific variant sees images — e.g. GLM's <code>-V</code> variant or
+              DeepSeek's <code>VL</code> line, not the plain text model. (2) A
+              model can support vision but have <strong>no tool-calling
+              endpoint</strong> — some Qwen-VL endpoints on OpenRouter are like
+              this, so they can see the page but can't act on it. You need
+              <em>both</em>.
             </p>
             <p>
-              <strong>Easy pick — just paste and go:</strong> on OpenRouter, use
-              <code>openai/gpt-4o</code> (tools + vision, works out of the box).
-              Prefer an open model? <code>qwen/qwen2.5-vl-72b-instruct</code> is a
-              good vision + tools alternative.
+              <strong>Easy pick — just paste and go:</strong>
+              <code>openai/gpt-4o</code> on OpenRouter does tools + vision out of
+              the box.
+            </p>
+            <p>
+              Prefer an open model, or want the current best? Don't match on vision
+              alone — open the
+              <a href="https://openrouter.ai/models" target="_blank" rel="noopener">OpenRouter models list</a>,
+              filter by <strong>Tools</strong> support <em>and</em> image input,
+              and pick a well-ranked one. That check stays right as new models ship,
+              instead of relying on a name that goes stale.
             </p>
           </div>
         </details>
