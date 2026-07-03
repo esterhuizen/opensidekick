@@ -182,10 +182,12 @@ async function handleRunTask(msg) {
   const { config, provider } = await getActiveProvider();
   if (!provider) {
     emit({ kind: "error", error: "No provider configured. Open Settings to add one." });
+    emit({ kind: "idle" });
     return { ok: false, error: "not-configured" };
   }
   if (!config.activeModel) {
     emit({ kind: "error", error: "No model selected. Open Settings to choose a model." });
+    emit({ kind: "idle" });
     return { ok: false, error: "no-model" };
   }
 
@@ -199,6 +201,7 @@ async function handleRunTask(msg) {
   const initialTabId = await getActiveContentTabId();
   if (initialTabId == null) {
     emit({ kind: "error", error: "Could not find an active tab to work on." });
+    emit({ kind: "idle" });
     currentRun = null;
     return { ok: false, error: "no-tab" };
   }

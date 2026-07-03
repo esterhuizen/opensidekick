@@ -29,6 +29,7 @@ let slashItems = [];
 let slashIndex = 0;
 let recording = false;
 let recCount = 0;
+let configured = false;
 
 let running = false;
 let newChatPending = true; // first send starts a fresh conversation
@@ -40,6 +41,7 @@ init();
 async function init() {
   const state = await send({ type: MSG.GET_STATE });
   if (state) applyState(state);
+  refreshConfigured();
   refreshContextHint();
 
   chrome.runtime.onMessage.addListener((msg) => {
@@ -58,7 +60,10 @@ async function init() {
   // Saved prompts for the "/" menu — load now and keep in sync.
   loadPrompts();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) loadPrompts();
+    if (area === "local" && changes[STORAGE_KEY]) {
+      loadPrompts();
+      refreshConfigured();
+    }
   });
 
   els.composer.addEventListener("submit", onSubmit);
@@ -82,15 +87,34 @@ async function init() {
 }
 
 function applyState(state) {
-  if (!state.configured) {
-    els.notConfigured.hidden = false;
-    els.send.disabled = false; // allow send; worker will surface a clear error
-  }
+  updateConfiguredUI(!!state.configured);
   if (state.seed) {
     els.input.value = state.seed;
     autoGrow();
   }
   if (state.running) setRunning(true);
+}
+
+function updateConfiguredUI(isConfigured) {
+  configured = isConfigured;
+  els.notConfigured.hidden = isConfigured;
+  const examples = document.querySelector(".examples");
+  if (examples) examples.hidden = !isConfigured;
+  els.input.placeholder = isConfigured
+    ? "Ask about or act on this page…  ( / for saved prompts )"
+    : "Add a model in Settings to get started →";
+}
+
+async function refreshConfigured() {
+  let cfg = {};
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    cfg = raw[STORAGE_KEY] || {};
+  } catch {
+    /* ignore */
+  }
+  const provider = (cfg.providers || []).find((p) => p.id === cfg.activeProviderId);
+  updateConfiguredUI(!!(provider && cfg.activeModel));
 }
 
 async function refreshContextHint() {
@@ -110,6 +134,13 @@ function onSubmit(e) {
   e.preventDefault();
   const text = els.input.value.trim();
   if (!text || running) return;
+  if (!configured) {
+    // First-run gate: no model yet — send them to Settings instead of failing.
+    els.empty.hidden = false;
+    els.notConfigured.hidden = false;
+    chrome.runtime.openOptionsPage();
+    return;
+  }
   els.empty.hidden = true;
   // The user bubble is rendered from the worker's `user_echo` event so that
   // runs triggered by anything (composer, context menu) show consistently.
@@ -177,9 +208,11 @@ function handleEvent(ev) {
       break;
     case "error":
       addError(ev.error);
+      setRunning(false);
       break;
     case "aborted":
       addNote("⏹ Stopped.");
+      setRunning(false);
       break;
     case "done":
       break;

@@ -561,6 +561,26 @@ async function main() {
     check(mcpTools.includes("mcp_testmcp_get_weather"), `mcp: agent called the MCP tool (tools: ${mcpTools.join(", ")})`);
     check(/Weather in Paris/.test(answerOf(mcpRun.events)), `mcp: the MCP tool result reached the model (got "${answerOf(mcpRun.events)}")`);
     check(mcpRun.events.filter((e) => e.kind === "error").length === 0, "mcp: no error events");
+
+    // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
+    // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { providers: [], activeProviderId: null, activeModel: null, settings: { autonomy: "auto" } },
+    ]);
+    const nc = await drive("hello");
+    check(nc.events.some((e) => e.kind === "error" && /provider|model/i.test(e.error || "")), "unconfigured: emits a clear 'add a model' error");
+    check(nc.events.some((e) => e.kind === "idle"), "unconfigured: emits idle so the panel isn't stuck in 'Working…'");
+
+    // (2) The side panel gates first-run: shows the connect-a-model notice.
+    const gatePanel = await context.newPage();
+    await gatePanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await gatePanel.waitForTimeout(400);
+    const noticeVisible = await gatePanel.$eval("#not-configured", (el) => !el.hidden).catch(() => false);
+    const placeholder = await gatePanel.$eval("#input", (el) => el.placeholder).catch(() => "");
+    check(noticeVisible, "gate: unconfigured side panel shows the 'connect a model' notice");
+    check(/settings/i.test(placeholder), `gate: composer prompts to add a model (placeholder "${placeholder}")`);
+    await gatePanel.close();
   } finally {
     server2.close();
     await context.close();
