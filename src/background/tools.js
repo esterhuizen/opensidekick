@@ -325,6 +325,17 @@ export async function executeTool(name, args, ctx) {
   }
 }
 
+// Show/update or hide the on-page activity overlay for a tab. Best-effort:
+// silently no-ops on restricted pages where the content script can't run.
+export async function setOverlay(tabId, state, label) {
+  try {
+    await ensureContentScript(tabId);
+    await chrome.tabs.sendMessage(tabId, { type: MSG.CS_OVERLAY, state, label });
+  } catch {
+    /* restricted page or tab gone */
+  }
+}
+
 // Ensure the content script is present in a tab; inject it if the page loaded
 // before the extension (or for tabs the manifest match missed).
 export async function ensureContentScript(tabId) {

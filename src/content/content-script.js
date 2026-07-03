@@ -32,6 +32,9 @@
         case "cs_act":
           sendResponse(act(msg));
           return true;
+        case "cs_overlay":
+          sendResponse(overlay(msg));
+          return true;
         default:
           sendResponse({ ok: false, error: "Unknown message" });
           return true;
@@ -74,6 +77,8 @@
     const nodes = document.querySelectorAll(selector);
     for (const el of nodes) {
       if (elements.length >= MAX_ELEMENTS) break;
+      // Never expose OpenSidekick's own on-page overlay to the model.
+      if (el.closest("#opensidekick-overlay")) continue;
       if (!isVisible(el)) continue;
       const ref = ++refCounter;
       refMap.set(ref, el);
@@ -385,6 +390,55 @@
     else if (dir === "up") window.scrollBy({ top: -Math.round(window.innerHeight * 0.8) });
     else window.scrollBy({ top: Math.round(window.innerHeight * 0.8) });
     return { ok: true, direction: dir, scrollY: Math.round(window.scrollY) };
+  }
+
+  // -------------------------------------------------------------------------
+  // Activity overlay (so the user always sees when the agent is acting)
+  // -------------------------------------------------------------------------
+
+  function overlay(msg) {
+    const ID = "opensidekick-overlay";
+    let el = document.getElementById(ID);
+    if (msg.state === "hide") {
+      if (el) el.remove();
+      return { ok: true };
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = ID;
+      // Glow border; never intercepts page interaction.
+      el.style.cssText =
+        "position:fixed;inset:0;pointer-events:none;z-index:2147483647;" +
+        "box-shadow:inset 0 0 0 3px rgba(79,70,229,.9), inset 0 0 26px 6px rgba(79,70,229,.32);";
+      const pill = document.createElement("div");
+      pill.style.cssText =
+        "position:fixed;top:10px;left:50%;transform:translateX(-50%);pointer-events:auto;" +
+        "display:flex;align-items:center;gap:9px;background:#1c1c1e;color:#fff;" +
+        'font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
+        "padding:6px 8px 6px 12px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.3);";
+      const dot = document.createElement("span");
+      dot.style.cssText = "width:8px;height:8px;border-radius:50%;background:#8b7dff;flex:0 0 auto;";
+      const label = document.createElement("span");
+      label.id = ID + "-label";
+      const stop = document.createElement("button");
+      stop.textContent = "Stop";
+      stop.style.cssText =
+        "pointer-events:auto;background:#dc2626;color:#fff;border:0;border-radius:999px;" +
+        "padding:3px 10px;font:inherit;cursor:pointer;";
+      stop.addEventListener("click", () => {
+        try {
+          chrome.runtime.sendMessage({ type: "stop_task" });
+        } catch (e) {
+          /* ignore */
+        }
+      });
+      pill.append(dot, label, stop);
+      el.appendChild(pill);
+      document.documentElement.appendChild(el);
+    }
+    const label = document.getElementById(ID + "-label");
+    if (label) label.textContent = msg.label || "OpenSidekick is working…";
+    return { ok: true };
   }
 
   // -------------------------------------------------------------------------

@@ -141,4 +141,5 @@ export const MSG = {
   CS_GET_TEXT: "cs_get_text",
   CS_ACT: "cs_act",
   CS_PING: "cs_ping",
+  CS_OVERLAY: "cs_overlay",
 };

@@ -209,6 +209,11 @@ body {
   color: var(--danger);
   border-color: var(--danger);
 }
+.tool-event.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
 .tool-event .tool-name {
   font-weight: 600;
   font-family: ui-monospace, monospace;

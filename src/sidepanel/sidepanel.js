@@ -138,6 +138,9 @@ function handleEvent(ev) {
     case "finish":
       addFinish(ev.summary);
       break;
+    case "warning":
+      addWarning(ev.text);
+      break;
     case "error":
       addError(ev.error);
       break;
@@ -239,6 +242,14 @@ function addError(text) {
   const el = document.createElement("div");
   el.className = "tool-event err";
   el.innerHTML = `<span>⚠</span><span>${escapeHtml(text)}</span>`;
+  els.messages.appendChild(el);
+  scroll();
+}
+
+function addWarning(text) {
+  const el = document.createElement("div");
+  el.className = "tool-event warn";
+  el.innerHTML = `<span>🛡️</span><span>${escapeHtml(text)}</span>`;
   els.messages.appendChild(el);
   scroll();
 }

@@ -18,6 +18,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Developer tools (optional):** `read_console` and `read_network`, backed by
   `chrome.debugger` (CDP). The debugger attaches lazily and detaches when the
   task ends. Opt-in via a Settings toggle; declares the `debugger` permission.
+- **Safety layer:**
+  - On-page activity indicator (glow + label + Stop button) shown while the agent
+    works and cleared when the task ends.
+  - Pre-action domain re-check: a mutating action is blocked if the page changed
+    origin since it was last read, with a warning to the user.
+  - Forced confirmation on purchase/delete/transfer-type clicks (by element
+    label) even in "auto" mode — never persisted, always re-prompts.
+  - Prompt-injection flagging: page content that looks like instructions aimed at
+    the agent is marked as untrusted in the tool result, and the user is warned.
+  - Unit tests for the injection + sensitive-action heuristics; e2e coverage for
+    all four behaviors in a real browser.
 - **Real-model e2e test** (`npm run test:real`) that drives the extension against
   a live LLM via OpenRouter; verified end-to-end with gpt-4o-mini.
 - e2e coverage for vision, run_javascript, and CDP console/network (verified that

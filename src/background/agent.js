@@ -3,8 +3,9 @@
 // stops calling tools, calls `finish`, hits the step cap, or is aborted.
 
 import { callModel } from "./providers.js";
-import { TOOL_DEFS, executeTool } from "./tools.js";
+import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
 import { evaluate, MUTATING_TOOLS, originOf } from "./permissions.js";
+import { detectInjection, isSensitiveActionText, INJECTION_NOTE } from "./safety.js";
 
 const SYSTEM_PROMPT = `You are OpenSidekick, a browser assistant that can read and act on the web page the user is looking at, on their behalf, using tools.
 
@@ -39,6 +40,9 @@ export async function runAgent(deps) {
     return true;
   });
   const sessionGrants = new Set();
+  const touchedTabs = new Set(); // tabs we showed the activity overlay on
+  let observedOrigin = null; // origin of the page the agent last read
+  const lastElements = new Map(); // ref -> accessible name, from the last read_page
   let focusedTabId = initialTabId;
   const ctx = {
     getTabId: async () => focusedTabId,
@@ -47,6 +51,7 @@ export async function runAgent(deps) {
     },
   };
 
+  try {
   for (let step = 0; step < maxSteps; step++) {
     if (signal.aborted) {
       emit({ kind: "aborted" });
@@ -119,7 +124,32 @@ export async function runAgent(deps) {
         } catch {
           /* ignore */
         }
-        const verdict = evaluate(call.name, url, config, sessionGrants);
+        const currentOrigin = originOf(url);
+
+        // (A) Domain re-check: refuse to act if the page changed origin since it
+        // was last read (defends against redirects / injected navigation).
+        if (observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
+          pushToolResult(conversation, call, {
+            ok: false,
+            error: `The page changed to ${currentOrigin} since you last read it (was ${observedOrigin}). Call read_page again before acting on this page.`,
+          });
+          emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: page changed since last read" });
+          emit({ kind: "warning", text: `Blocked ${call.name}: the page changed origin (${observedOrigin} → ${currentOrigin}) since it was last read.` });
+          continue;
+        }
+
+        // (D) High-consequence actions (buy / pay / delete / …) always confirm,
+        // regardless of site or autonomy mode.
+        let forceSensitive = false;
+        if (call.name === "click_element" || call.name === "double_click") {
+          if (isSensitiveActionText(lastElements.get(call.args?.ref))) forceSensitive = true;
+        }
+
+        let verdict = evaluate(call.name, url, config, sessionGrants);
+        if (forceSensitive && verdict.decision !== "block") {
+          verdict = { decision: "prompt", sensitive: true };
+        }
+
         if (verdict.decision === "block") {
           pushToolResult(conversation, call, { ok: false, error: verdict.reason });
           emit({ kind: "tool_end", name: call.name, ok: false, summary: verdict.reason });
@@ -142,15 +172,22 @@ export async function runAgent(deps) {
             emit({ kind: "done" });
             return;
           }
-          if (choice === "always") {
-            await saveSitePermission(origin, "allow");
-          } else {
-            sessionGrants.add(origin);
+          // Sensitive actions always re-prompt — never persist or session-grant.
+          if (!verdict.sensitive) {
+            if (choice === "always") await saveSitePermission(origin, "allow");
+            else sessionGrants.add(origin);
           }
         } else if (verdict.autoGranted) {
-          sessionGrants.add(originOf(url));
+          sessionGrants.add(currentOrigin);
         }
       }
+
+      // (C) Show the on-page activity indicator on the tab we're about to touch
+      // (hidden momentarily for screenshots so it isn't captured).
+      const overlayLabel = "OpenSidekick: " + call.name.replace(/_/g, " ");
+      const hideForShot = call.name === "take_screenshot";
+      touchedTabs.add(focusedTabId);
+      await setOverlay(focusedTabId, hideForShot ? "hide" : "show", overlayLabel);
 
       let toolResult;
       try {
@@ -158,6 +195,8 @@ export async function runAgent(deps) {
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
       }
+      if (hideForShot) await setOverlay(focusedTabId, "show", overlayLabel);
+
       // A tool that returns an image (screenshot) can't carry it in an OpenAI
       // tool result, so hold the image and attach it as a follow-up user
       // message once every tool result for this turn is recorded.
@@ -165,6 +204,23 @@ export async function runAgent(deps) {
         pendingImages.push(toolResult.image);
         toolResult = { ok: true, note: toolResult.note || "Image attached below." };
       }
+
+      // (B) Track the observed origin and flag suspected prompt injection so the
+      // model treats page instructions as data, not commands.
+      if (toolResult && toolResult.ok !== false && (call.name === "read_page" || call.name === "get_page_text")) {
+        observedOrigin = originOf(toolResult.url) || observedOrigin;
+        if (call.name === "read_page") {
+          lastElements.clear();
+          for (const el of toolResult.elements || []) lastElements.set(el.ref, el.name || "");
+        }
+        const scanText = call.name === "read_page" ? readableText(toolResult) : toolResult.text || "";
+        if (detectInjection(scanText).suspected) {
+          toolResult.suspected_injection = true;
+          toolResult.injection_note = INJECTION_NOTE;
+          emit({ kind: "warning", text: "Possible prompt injection in page content — instructions found in the page will be ignored." });
+        }
+      }
+
       pushToolResult(conversation, call, toolResult);
       emit({
         kind: "tool_end",
@@ -189,6 +245,18 @@ export async function runAgent(deps) {
     content: `I stopped after ${maxSteps} steps to avoid running too long. Ask me to continue if you'd like.`,
   });
   emit({ kind: "done" });
+  } finally {
+    // Always clear the on-page activity overlay, however the task ended.
+    for (const t of touchedTabs) await setOverlay(t, "hide").catch(() => {});
+  }
+}
+
+// Combine a read_page result into a single blob for injection scanning.
+function readableText(r) {
+  const parts = [];
+  if (r.summary) parts.push(r.summary.headline || "", r.summary.description || "", r.summary.excerpt || "");
+  for (const el of r.elements || []) parts.push(el.name || "");
+  return parts.join(" ");
 }
 
 function pushToolResult(conversation, call, result) {
