@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSidekick Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <img src="../../icons/icon48.png" alt="" width="32" height="32" />
+        <div>
+          <h1>OpenSidekick Settings</h1>
+          <p class="sub">Bring your own LLM. Keys are stored locally in this browser and sent only to the provider you choose.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>1. Providers</h2>
+        <p class="hint">Add one or more model providers, then pick the one to use.</p>
+
+        <div class="add-row">
+          <select id="preset-select">
+            <option value="">Add a provider…</option>
+          </select>
+          <button id="add-provider" class="btn">Add</button>
+        </div>
+
+        <div id="provider-list" class="provider-list"></div>
+        <p id="no-providers" class="empty-note">No providers yet. Add one above to get started.</p>
+      </section>
+
+      <section class="card">
+        <h2>2. Behavior</h2>
+
+        <div class="field">
+          <label>Autonomy</label>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="autonomy" value="ask" /> Ask before acting on a new site <span class="tag">safer</span></label>
+            <label class="radio"><input type="radio" name="autonomy" value="auto" /> Act without asking on allowed sites <span class="tag warn-tag">faster</span></label>
+          </div>
+          <p class="hint">Sensitive sites (banking, payments, crypto) always ask, regardless of this setting.</p>
+        </div>
+
+        <div class="field grid2">
+          <div>
+            <label for="max-steps">Max steps per task</label>
+            <input type="number" id="max-steps" min="1" max="100" />
+          </div>
+          <div>
+            <label for="max-tokens">Max response tokens</label>
+            <input type="number" id="max-tokens" min="256" max="128000" step="256" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="temperature">Temperature: <span id="temp-value">0.4</span></label>
+          <input type="range" id="temperature" min="0" max="1" step="0.05" />
+          <p class="hint">Lower = more focused and deterministic. Ignored by some models.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3. Site permissions</h2>
+        <p class="hint">Sites you've allowed or blocked the agent to act on.</p>
+        <div id="perm-list" class="perm-list"></div>
+        <p id="no-perms" class="empty-note">No site rules yet.</p>
+      </section>
+
+      <footer>
+        <span id="toast" class="toast" hidden>Saved</span>
+        <a href="https://github.com/OWNER/opensidekick" target="_blank" rel="noopener">Source &amp; docs on GitHub ↗</a>
+      </footer>
+    </div>
+
+    <template id="provider-template">
+      <div class="provider" data-id="">
+        <div class="provider-head">
+          <label class="active-radio">
+            <input type="radio" name="active-provider" />
+            <span class="pname"></span>
+          </label>
+          <span class="type-badge"></span>
+          <button class="link-btn delete-provider">Remove</button>
+        </div>
+        <div class="provider-body">
+          <div class="field">
+            <label>Base URL</label>
+            <input type="text" class="base-url" placeholder="https://…/v1" />
+          </div>
+          <div class="field">
+            <label>API key <a class="key-link" target="_blank" rel="noopener" hidden>get one ↗</a></label>
+            <input type="password" class="api-key" placeholder="Paste your API key (leave blank for local models)" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label>Model</label>
+            <div class="model-row">
+              <input type="text" class="model" list="" placeholder="model id" />
+              <button class="btn small fetch-models">Fetch models</button>
+            </div>
+            <datalist></datalist>
+            <p class="hint fetch-status"></p>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

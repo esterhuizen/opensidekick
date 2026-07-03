@@ -1,0 +1,362 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f7f7f8;
+  --border: #e4e4e7;
+  --text: #1f2328;
+  --muted: #6b7280;
+  --accent: #4f46e5;
+  --accent-soft: #eef2ff;
+  --user-bg: #4f46e5;
+  --user-text: #ffffff;
+  --tool-bg: #f1f5f9;
+  --tool-border: #cbd5e1;
+  --warn: #b45309;
+  --danger: #dc2626;
+  --radius: 12px;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --panel: #262629;
+    --border: #3a3a3d;
+    --text: #e7e7ea;
+    --muted: #9a9aa2;
+    --accent: #8b7dff;
+    --accent-soft: #2b2b40;
+    --user-bg: #4f46e5;
+    --user-text: #ffffff;
+    --tool-bg: #2a2a2e;
+    --tool-border: #3f3f45;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-bar {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.empty-state {
+  margin: auto 0;
+  text-align: center;
+  color: var(--muted);
+  padding: 16px;
+}
+.empty-state h1 {
+  font-size: 18px;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.empty-state p {
+  margin: 0 0 12px;
+}
+.examples {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.examples li {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+}
+.examples li:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.msg {
+  max-width: 100%;
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.msg.user {
+  align-self: flex-end;
+  background: var(--user-bg);
+  color: var(--user-text);
+  border-bottom-right-radius: 4px;
+  max-width: 85%;
+}
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.msg.assistant :first-child {
+  margin-top: 0;
+}
+.msg.assistant :last-child {
+  margin-bottom: 0;
+}
+.msg.assistant p {
+  margin: 0 0 8px;
+}
+.msg.assistant pre {
+  background: var(--tool-bg);
+  border: 1px solid var(--tool-border);
+  border-radius: 8px;
+  padding: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+}
+.msg.assistant code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.msg.assistant ul,
+.msg.assistant ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.tool-event {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--tool-bg);
+  border: 1px solid var(--tool-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 90%;
+}
+.tool-event.err {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.tool-event .tool-name {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+
+.perm-card {
+  align-self: stretch;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--accent-soft);
+}
+.perm-card.sensitive {
+  border-color: var(--danger);
+}
+.perm-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.perm-card p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.perm-card .origin {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+.perm-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.perm-buttons button {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.perm-buttons button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.perm-buttons button.danger {
+  color: var(--danger);
+}
+.perm-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.thinking {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 13px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s infinite ease-in-out;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: 8px;
+  background: var(--panel);
+}
+.composer textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  max-height: 160px;
+}
+.composer textarea:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+.composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.context-hint {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+.composer-buttons {
+  display: flex;
+  gap: 6px;
+}
+.send-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.stop-btn {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.warn {
+  color: var(--warn);
+}
+.warn a,
+.setup-link {
+  color: var(--accent);
+}
+a {
+  color: var(--accent);
+}

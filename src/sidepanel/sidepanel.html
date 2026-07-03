@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSidekick</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="../../icons/icon32.png" alt="" width="20" height="20" />
+        <span>OpenSidekick</span>
+      </div>
+      <div class="topbar-actions">
+        <button id="new-chat" class="icon-btn" title="New chat">＋</button>
+        <button id="open-settings" class="icon-btn" title="Settings">⚙</button>
+      </div>
+    </header>
+
+    <div id="status-bar" class="status-bar" hidden></div>
+
+    <main id="messages" class="messages" aria-live="polite">
+      <div id="empty-state" class="empty-state">
+        <h1>Your browser, any model.</h1>
+        <p>
+          Ask me to read, summarize, or act on the current page. I can click,
+          type, navigate, and work across tabs — using whichever LLM you
+          configured.
+        </p>
+        <ul class="examples">
+          <li data-example="Summarize this page in 5 bullet points.">Summarize this page in 5 bullets</li>
+          <li data-example="Find the main contact email on this page.">Find the contact email</li>
+          <li data-example="Fill in my name as 'Alex Doe' in the form on this page, but do not submit it.">Fill a form (no submit)</li>
+        </ul>
+        <p id="not-configured" class="warn" hidden>
+          ⚠ No model configured yet. <a href="#" id="setup-link">Open Settings</a> to add one.
+        </p>
+      </div>
+    </main>
+
+    <form id="composer" class="composer">
+      <textarea
+        id="input"
+        rows="1"
+        placeholder="Ask about or act on this page…  (Enter to send, Shift+Enter for newline)"
+      ></textarea>
+      <div class="composer-row">
+        <span id="context-hint" class="context-hint"></span>
+        <div class="composer-buttons">
+          <button type="button" id="stop-btn" class="stop-btn" hidden>■ Stop</button>
+          <button type="submit" id="send-btn" class="send-btn">Send</button>
+        </div>
+      </div>
+    </form>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

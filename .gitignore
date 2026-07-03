@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build artifacts / packaged extension
+*.zip
+dist/
+web-ext-artifacts/
+
+# Local secrets — never commit API keys
+*.local
+.env
+.env.*
+secrets.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
