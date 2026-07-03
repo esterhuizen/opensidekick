@@ -264,6 +264,34 @@ body {
 .perm-buttons button.danger {
   color: var(--danger);
 }
+
+.plan-steps {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+  font-size: 13px;
+}
+.plan-steps li {
+  margin: 3px 0;
+}
+.plan-domains {
+  font-size: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.plan-domains-label {
+  color: var(--muted);
+}
+.domain-chip {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
 .perm-buttons button:disabled {
   opacity: 0.5;
   cursor: default;

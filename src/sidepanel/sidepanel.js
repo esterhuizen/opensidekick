@@ -33,6 +33,7 @@ async function init() {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === MSG.AGENT_EVENT) handleEvent(msg);
     else if (msg.type === MSG.PERMISSION_REQUEST) showPermission(msg);
+    else if (msg.type === MSG.PLAN_REQUEST) showPlan(msg);
   });
 
   els.composer.addEventListener("submit", onSubmit);
@@ -134,6 +135,12 @@ function handleEvent(ev) {
       break;
     case "tool_end":
       addToolEnd(ev.name, ev.ok, ev.summary);
+      break;
+    case "planning":
+      setStatus("Planning…");
+      break;
+    case "plan_declined":
+      addNote("Plan declined — nothing was done.");
       break;
     case "finish":
       addFinish(ev.summary);
@@ -258,6 +265,33 @@ function addNote(text) {
   const el = document.createElement("div");
   el.className = "tool-event";
   el.textContent = text;
+  els.messages.appendChild(el);
+  scroll();
+}
+
+function showPlan(req) {
+  const plan = req.plan || {};
+  const el = document.createElement("div");
+  el.className = "perm-card plan-card";
+  const steps = (plan.steps || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+  const domains = (plan.domains || []).map((d) => `<span class="domain-chip">${escapeHtml(d)}</span>`).join("");
+  el.innerHTML = `
+    <h3>Plan — approve to continue?</h3>
+    ${plan.summary ? `<p>${escapeHtml(plan.summary)}</p>` : ""}
+    ${steps ? `<ol class="plan-steps">${steps}</ol>` : ""}
+    ${domains ? `<div class="plan-domains"><span class="plan-domains-label">Sites:</span> ${domains}</div>` : ""}
+    <div class="perm-buttons">
+      <button class="primary" data-approved="1">Approve &amp; run</button>
+      <button class="danger" data-approved="0">Decline</button>
+    </div>`;
+  el.querySelectorAll("button").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      el.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      const approved = btn.dataset.approved === "1";
+      send({ type: MSG.PLAN_RESPONSE, id: req.id, approved });
+      el.querySelector(".perm-buttons").outerHTML = `<p style="margin:0;font-size:12px;color:var(--muted)">${approved ? "Approved." : "Declined."}</p>`;
+    }),
+  );
   els.messages.appendChild(el);
   scroll();
 }

@@ -18,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Developer tools (optional):** `read_console` and `read_network`, backed by
   `chrome.debugger` (CDP). The debugger attaches lazily and detaches when the
   task ends. Opt-in via a Settings toggle; declares the `debugger` permission.
+- **Plan-approval mode:** a third autonomy setting ("Plan first"). The agent
+  proposes a plan (summary + steps + the sites it expects to use) and waits for
+  approval before acting; approved sites then act without per-action prompts,
+  while any other site still prompts. Plan helpers live in a unit-tested
+  `plan.js`; e2e-verified end to end.
 - **Safety layer:**
   - On-page activity indicator (glow + label + Stop button) shown while the agent
     works and cleared when the task ends.

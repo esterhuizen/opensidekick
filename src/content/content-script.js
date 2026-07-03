@@ -403,6 +403,8 @@
       if (el) el.remove();
       return { ok: true };
     }
+    // Persistent marker (survives hide) so tools can confirm the overlay fired.
+    document.documentElement.setAttribute("data-opensidekick-shown", "1");
     if (!el) {
       el = document.createElement("div");
       el.id = ID;

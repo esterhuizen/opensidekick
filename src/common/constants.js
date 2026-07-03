@@ -132,10 +132,12 @@ export const MSG = {
   RUN_TASK: "run_task",
   STOP_TASK: "stop_task",
   PERMISSION_RESPONSE: "permission_response",
+  PLAN_RESPONSE: "plan_response",
   GET_STATE: "get_state",
   // worker -> side panel
   AGENT_EVENT: "agent_event", // { kind, ... } streamed progress
   PERMISSION_REQUEST: "permission_request",
+  PLAN_REQUEST: "plan_request",
   // worker <-> content script
   CS_READ_PAGE: "cs_read_page",
   CS_GET_TEXT: "cs_get_text",

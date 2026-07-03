@@ -44,13 +44,14 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   - OpenAI-compatible (`/chat/completions`): OpenRouter, OpenAI, Google Gemini,
     Groq, Together, DeepSeek, **Ollama**, **LM Studio**, or any custom endpoint.
   - Anthropic Messages API (direct from the browser).
-- **Safety layer** — an "ask before acting" per-site permission model; a visible
-  on-page activity indicator with a Stop button so you always see when it's
-  acting; a re-check that **blocks an action if the page changed origin** since
-  it was last read (defends against redirects / injected navigation); **forced
-  confirmation on purchase/delete-type clicks** even in auto mode; and
-  **prompt-injection flagging** of page content. Sensitive sites (banking,
-  payments, crypto) always confirm per action.
+- **Safety layer** — three autonomy modes: **plan-first** (the agent proposes a
+  plan and the sites it will use, and waits for your approval before acting),
+  **ask before acting**, or **auto**. Plus a visible on-page activity indicator
+  with a Stop button so you always see when it's acting; a re-check that **blocks
+  an action if the page changed origin** since it was last read (defends against
+  redirects / injected navigation); **forced confirmation on purchase/delete-type
+  clicks** even in auto mode; and **prompt-injection flagging** of page content.
+  Sensitive sites (banking, payments, crypto) always confirm per action.
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
 - **Local-first & private**: keys and settings live in `chrome.storage.local`;
@@ -164,6 +165,7 @@ Shipped since the first cut:
 - [x] Read console errors + network requests via Chrome's debugger (opt-in)
 - [x] On-page activity indicator with a Stop button
 - [x] Prompt-injection flagging + pre-action domain re-check + sensitive-action confirmation
+- [x] Plan-approval mode (agent proposes steps + sites, you approve before it acts)
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
@@ -173,7 +175,6 @@ Planned, to reach and exceed feature parity with vendor-locked assistants:
 - [ ] Connect to MCP tool servers (extend beyond the browser)
 - [ ] Upload files into file inputs (via the debugger)
 - [ ] CDP-based trusted input for tougher sites
-- [ ] Plan-approval mode (preview steps + sites before running)
 - [ ] Prompt-injection classifier on untrusted content
 - [ ] Firefox (WebExtensions) build
 

@@ -6,6 +6,7 @@ import { callModel } from "./providers.js";
 import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
 import { evaluate, MUTATING_TOOLS, originOf } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, INJECTION_NOTE } from "./safety.js";
+import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 
 const SYSTEM_PROMPT = `You are OpenSidekick, a browser assistant that can read and act on the web page the user is looking at, on their behalf, using tools.
 
@@ -26,7 +27,7 @@ Safety:
 If the user only asks a question that doesn't need the page, just answer directly without tools.`;
 
 export async function runAgent(deps) {
-  const { conversation, config, provider, initialTabId, signal, emit, requestPermission, saveSitePermission } = deps;
+  const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, saveSitePermission } = deps;
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
   // Offer optional tools only when the user has enabled them: vision (needs a
@@ -40,6 +41,7 @@ export async function runAgent(deps) {
     return true;
   });
   const sessionGrants = new Set();
+  const approvedHosts = new Set(); // hostnames the user approved in plan mode
   const touchedTabs = new Set(); // tabs we showed the activity overlay on
   let observedOrigin = null; // origin of the page the agent last read
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
@@ -50,6 +52,41 @@ export async function runAgent(deps) {
       focusedTabId = id;
     },
   };
+
+  // Plan-approval mode: propose a plan and wait for approval before acting.
+  if (config.settings.autonomy === "plan" && requestPlanApproval) {
+    emit({ kind: "planning" });
+    let plan = null;
+    try {
+      plan = await makePlan(provider, config, conversation, signal);
+    } catch {
+      plan = null; // if planning fails, fall through and run normally
+    }
+    if (signal.aborted) {
+      emit({ kind: "aborted" });
+      return;
+    }
+    if (plan && plan.needsActions) {
+      const approved = await requestPlanApproval(plan);
+      if (!approved) {
+        emit({ kind: "plan_declined" });
+        emit({ kind: "done" });
+        return;
+      }
+      for (const d of plan.domains) {
+        const h = hostFromDomain(d);
+        if (h) approvedHosts.add(h);
+      }
+      conversation.push({ role: "assistant", content: planToText(plan) });
+      conversation.push({
+        role: "user",
+        content:
+          "I approve this plan. Carry it out now. You may act on these sites without asking: " +
+          (plan.domains.join(", ") || "(the current site)") +
+          ". Ask before using any other site.",
+      });
+    }
+  }
 
   try {
   for (let step = 0; step < maxSteps; step++) {
@@ -148,6 +185,11 @@ export async function runAgent(deps) {
         let verdict = evaluate(call.name, url, config, sessionGrants);
         if (forceSensitive && verdict.decision !== "block") {
           verdict = { decision: "prompt", sensitive: true };
+        } else if (verdict.decision === "prompt") {
+          // In plan mode, act freely on sites the user approved in the plan.
+          const currentHost = hostFromDomain(url);
+          const preApproved = currentHost && [...approvedHosts].some((h) => currentHost === h || currentHost.endsWith("." + h));
+          if (preApproved) verdict = { decision: "allow" };
         }
 
         if (verdict.decision === "block") {
@@ -249,6 +291,23 @@ export async function runAgent(deps) {
     // Always clear the on-page activity overlay, however the task ended.
     for (const t of touchedTabs) await setOverlay(t, "hide").catch(() => {});
   }
+}
+
+const PLAN_SYSTEM = `The user has asked you to do something in their browser. Before acting, produce a short plan for their approval. Respond with ONLY a JSON object and nothing else:
+{"summary": "one sentence describing what you'll do", "steps": ["3 to 7 short high-level steps"], "domains": ["website hostnames you expect to use, e.g. example.com"], "needs_actions": true or false}
+Set needs_actions to false only if you can answer the user directly without acting on any page.`;
+
+async function makePlan(provider, config, conversation, signal) {
+  const res = await callModel(provider, {
+    model: config.activeModel,
+    system: PLAN_SYSTEM,
+    messages: conversation,
+    tools: [],
+    maxTokens: 700,
+    temperature: config.settings.temperature,
+    signal,
+  });
+  return parsePlan(res.content);
 }
 
 // Combine a read_page result into a single blob for injection scanning.

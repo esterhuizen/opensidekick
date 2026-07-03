@@ -188,12 +188,25 @@ function startServer() {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
-        let messages = [];
+        let bodyObj = {};
         try {
-          messages = JSON.parse(body).messages || [];
+          bodyObj = JSON.parse(body);
         } catch {}
+        const messages = bodyObj.messages || [];
         for (const m of messages) {
           if (Array.isArray(m.content)) for (const p of m.content) if (p && p.type === "image_url") sawImage = true;
+        }
+        // The plan-approval "planning" call is the only request sent with no tools.
+        if (!bodyObj.tools || bodyObj.tools.length === 0) {
+          return sseText(
+            res,
+            JSON.stringify({
+              summary: "Search the page for cats",
+              steps: ["Read the page", "Type cats into the search box", "Click Search"],
+              domains: ["127.0.0.1"],
+              needs_actions: true,
+            }),
+          );
         }
         const d = decide(messages);
         if (d.kind === "text") sseText(res, d.text);
@@ -344,17 +357,14 @@ async function main() {
       await optPage.evaluate(() => { window.__events = []; window.__perm = []; });
       await testPage.bringToFront();
       await optPage.evaluate(([rt, t]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: true }), [MSG.RUN_TASK, task]);
-      let overlaySeen = false;
       for (let i = 0; i < 160; i++) {
-        if (!overlaySeen) overlaySeen = await testPage.evaluate(() => !!document.getElementById("opensidekick-overlay")).catch(() => false);
         const evs = await optPage.evaluate(() => window.__events || []);
         if (evs.some((e) => e.kind === "idle")) break;
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 200));
       }
-      const overlayGone = await testPage.evaluate(() => !document.getElementById("opensidekick-overlay")).catch(() => true);
       const events = await optPage.evaluate(() => window.__events || []);
       const perms = await optPage.evaluate(() => window.__perm || []);
-      return { events, perms, overlaySeen, overlayGone };
+      return { events, perms };
     };
     const answerOf = (events) => [...events].reverse().find((e) => (e.kind === "assistant_end" && e.content) || (e.kind === "finish" && e.summary))?.content ??
       [...events].reverse().find((e) => e.kind === "finish" && e.summary)?.summary ?? "";
@@ -377,15 +387,20 @@ async function main() {
     check(/console_boom=true/.test(answerOf(cdp.events)), `cdp: console error captured via debugger (got "${answerOf(cdp.events)}")`);
     check(/network_ping=true/.test(answerOf(cdp.events)), `cdp: network request captured via debugger (got "${answerOf(cdp.events)}")`);
     check(cdp.events.filter((e) => e.kind === "error").length === 0, "cdp: no error events");
-    check(cdp.overlaySeen, "overlay: activity indicator appeared while the agent worked");
-    check(cdp.overlayGone, "overlay: indicator was removed when the task ended");
 
     // --- (D) sensitive-action confirmation: clicking "Buy now" must prompt even
     // in auto mode; after allowing once, the click goes through. ---
+    // (C) Reset the persistent overlay marker, run the task, then confirm the
+    // overlay was shown (marker set) and removed (element gone). Race-free.
+    await testPage.evaluate(() => document.documentElement.removeAttribute("data-opensidekick-shown"));
     const buy = await drive("Buy the item on this page.");
     const buyOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
     check(buy.perms.some((p) => p.sensitive), "safety: purchase click triggered a sensitive confirmation (even in auto mode)");
     check(buyOut === "bought", `safety: after confirming, the purchase click went through (got "${buyOut}")`);
+    const overlayShown = await testPage.evaluate(() => document.documentElement.hasAttribute("data-opensidekick-shown"));
+    const overlayGone = await testPage.evaluate(() => !document.getElementById("opensidekick-overlay"));
+    check(overlayShown, "overlay: activity indicator was shown while the agent worked");
+    check(overlayGone, "overlay: indicator was removed when the task ended");
 
     // --- (A) domain re-check: after navigating to a different origin without
     // re-reading, the next action is blocked. ---
@@ -399,6 +414,31 @@ async function main() {
     const inj = await drive("Check the notice page for anything suspicious.");
     check(/injection_flagged=true/.test(answerOf(inj.events)), `safety: page content flagged as suspected injection (got "${answerOf(inj.events)}")`);
     check(inj.events.some((e) => e.kind === "warning" && /injection/i.test(e.text || "")), "safety: user was warned about prompt injection");
+
+    // --- Plan-approval mode: agent proposes a plan; on approval it runs, and
+    // approved sites act without per-action prompts. ---
+    await testPage.goto(`${base}/page`, { waitUntil: "load" }); // back to the search page
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, settings: { ...config.settings, autonomy: "plan" } },
+    ]);
+    await optPage.evaluate(([planReq, planResp]) => {
+      window.__plans = [];
+      chrome.runtime.onMessage.addListener((m) => {
+        if (m && m.type === planReq) {
+          window.__plans.push(m.plan);
+          chrome.runtime.sendMessage({ type: planResp, id: m.id, approved: true });
+        }
+      });
+    }, [MSG.PLAN_REQUEST, MSG.PLAN_RESPONSE]);
+
+    const planRun = await drive("Search for cats on this page.");
+    const plans = await optPage.evaluate(() => window.__plans || []);
+    const planOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
+    check(plans.length > 0, "plan: agent proposed a plan for approval before acting");
+    check(!!(plans[0] && Array.isArray(plans[0].steps) && plans[0].steps.length > 0), "plan: the proposed plan included steps");
+    check(planOut === "Results for: cats", `plan: after approval the task ran to completion (got "${planOut}")`);
+    check(planRun.events.filter((e) => e.kind === "error").length === 0, "plan: no error events");
   } finally {
     server2.close();
     await context.close();

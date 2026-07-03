@@ -13,6 +13,7 @@ import { detachAll } from "./cdp.js";
 let conversation = []; // normalized message history for the current chat
 let currentRun = null; // { controller: AbortController }
 const pendingPermissions = new Map(); // id -> resolve fn
+const pendingPlans = new Map(); // id -> resolve fn
 let permissionSeq = 0;
 let pendingSeed = null; // task text queued by a context-menu action
 
@@ -68,9 +69,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     case MSG.STOP_TASK: {
       if (currentRun) currentRun.controller.abort();
-      // Also cancel any pending permission prompt.
+      // Also cancel any pending permission or plan prompt.
       for (const [, resolve] of pendingPermissions) resolve("decline");
       pendingPermissions.clear();
+      for (const [, resolve] of pendingPlans) resolve(false);
+      pendingPlans.clear();
       sendResponse({ ok: true });
       return false;
     }
@@ -79,6 +82,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (resolve) {
         pendingPermissions.delete(msg.id);
         resolve(msg.choice);
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+    case MSG.PLAN_RESPONSE: {
+      const resolve = pendingPlans.get(msg.id);
+      if (resolve) {
+        pendingPlans.delete(msg.id);
+        resolve(!!msg.approved);
       }
       sendResponse({ ok: true });
       return false;
@@ -139,6 +151,7 @@ async function handleRunTask(msg) {
     signal: controller.signal,
     emit,
     requestPermission,
+    requestPlanApproval,
     saveSitePermission: (origin, value) => setSitePermission(origin, value),
   })
     .catch((e) => emit({ kind: "error", error: String(e.message || e) }))
@@ -164,6 +177,18 @@ function requestPermission(details) {
         pendingPermissions.delete(id);
         resolve("decline");
       });
+  });
+}
+
+// Ask the side panel to approve the agent's plan. Resolves to true/false.
+function requestPlanApproval(plan) {
+  const id = ++permissionSeq;
+  return new Promise((resolve) => {
+    pendingPlans.set(id, resolve);
+    chrome.runtime.sendMessage({ type: MSG.PLAN_REQUEST, id, plan }).catch(() => {
+      pendingPlans.delete(id);
+      resolve(false);
+    });
   });
 }
 

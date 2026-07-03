@@ -37,10 +37,11 @@
         <div class="field">
           <label>Autonomy</label>
           <div class="radio-row">
+            <label class="radio"><input type="radio" name="autonomy" value="plan" /> Plan first, then act on approval <span class="tag">safest</span></label>
             <label class="radio"><input type="radio" name="autonomy" value="ask" /> Ask before acting on a new site <span class="tag">safer</span></label>
             <label class="radio"><input type="radio" name="autonomy" value="auto" /> Act without asking on allowed sites <span class="tag warn-tag">faster</span></label>
           </div>
-          <p class="hint">Sensitive sites (banking, payments, crypto) always ask, regardless of this setting.</p>
+          <p class="hint">In “Plan first”, the agent proposes its steps and the sites it will use, and waits for your approval before acting. Sensitive sites (banking, payments, crypto) and purchase/delete actions always confirm, regardless of this setting.</p>
         </div>
 
         <div class="field grid2">
