@@ -599,6 +599,21 @@ async function main() {
     await imgPage.close();
     await testPage.bringToFront();
 
+    // --- Stuck-panel recovery: Stop and orphaned prompt answers always emit
+    // idle, so the panel can never wedge on "Working…" (e.g. if the MV3 worker
+    // was terminated while awaiting a permission answer). ---
+    await optPage.evaluate(() => (window.__events = []));
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.STOP_TASK);
+    await new Promise((r) => setTimeout(r, 300));
+    let recEvents = await optPage.evaluate(() => window.__events || []);
+    check(recEvents.some((e) => e.kind === "idle"), "recovery: Stop with no active run still emits idle (un-sticks the panel)");
+
+    await optPage.evaluate(() => (window.__events = []));
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t, id: 999999, choice: "once" }), MSG.PERMISSION_RESPONSE);
+    await new Promise((r) => setTimeout(r, 300));
+    recEvents = await optPage.evaluate(() => window.__events || []);
+    check(recEvents.some((e) => e.kind === "idle"), "recovery: a late/orphaned permission answer emits idle");
+
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

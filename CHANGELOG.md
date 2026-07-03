@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Stop and slow permission answers no longer wedge the panel.** Chrome can
+  terminate the extension's service worker while the agent waits for you to
+  answer a permission prompt; a later "Allow" then landed on a fresh worker that
+  had lost the run, so nothing happened and Stop did nothing. The worker now
+  keeps itself alive for the duration of a run (including while awaiting a
+  prompt), and — as a backstop — Stop and any orphaned prompt answer always
+  reset the panel to idle.
 - **First run no longer gets stuck on "Working…".** Sending a message before a
   model is connected now shows a clear "add a model" message and the side panel
   returns to idle instead of hanging with a dead Stop button. Submitting with no

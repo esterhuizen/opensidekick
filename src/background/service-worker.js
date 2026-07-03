@@ -19,6 +19,26 @@ const pendingPlans = new Map(); // id -> resolve fn
 let permissionSeq = 0;
 let pendingSeed = null; // task text queued by a context-menu action
 let recording = null; // { steps, tabId, startUrl, lastClickAt, lastUrl }
+let keepAliveTimer = null;
+
+// MV3 terminates an idle service worker after ~30s. While a task is running —
+// especially while we're parked awaiting the user's answer to a permission or
+// plan prompt — ping a chrome API every 20s to reset that idle timer, so the run
+// (and its in-memory pending prompts) survive until the user responds. Without
+// this, a slow "Allow" click lands on a fresh worker that has lost the run: the
+// click resolves nothing and Stop has no run to abort, leaving a stuck panel.
+function startKeepAlive() {
+  if (keepAliveTimer != null) return;
+  keepAliveTimer = setInterval(() => {
+    chrome.runtime.getPlatformInfo(() => {});
+  }, 20000);
+}
+function stopKeepAlive() {
+  if (keepAliveTimer != null) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+}
 
 // -------------------------------------------------------------------------
 // Lifecycle
@@ -118,6 +138,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       pendingPermissions.clear();
       for (const [, resolve] of pendingPlans) resolve(false);
       pendingPlans.clear();
+      // Always un-stick the panel: if the run is live its finally also emits idle
+      // (harmless), and if the worker restarted there's no run to end otherwise.
+      if (!currentRun) stopKeepAlive();
+      emit({ kind: "idle" });
       sendResponse({ ok: true });
       return false;
     }
@@ -126,6 +150,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (resolve) {
         pendingPermissions.delete(msg.id);
         resolve(msg.choice);
+      } else if (!currentRun) {
+        // The run was lost (e.g. the worker restarted before this answer landed).
+        // Nothing to resolve — reset the panel instead of leaving it "Working".
+        emit({ kind: "idle" });
       }
       sendResponse({ ok: true });
       return false;
@@ -135,6 +163,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (resolve) {
         pendingPlans.delete(msg.id);
         resolve(!!msg.approved);
+      } else if (!currentRun) {
+        emit({ kind: "idle" });
       }
       sendResponse({ ok: true });
       return false;
@@ -206,6 +236,9 @@ async function handleRunTask(msg) {
     return { ok: false, error: "no-tab" };
   }
 
+  // Keep the worker alive for the whole run (incl. while awaiting prompts).
+  startKeepAlive();
+
   // Run the loop (do not await the sendResponse on it — events stream async).
   runAgent({
     conversation,
@@ -223,6 +256,7 @@ async function handleRunTask(msg) {
       // Detach the debugger (removes the "debugging this browser" banner).
       await detachAll().catch(() => {});
       currentRun = null;
+      stopKeepAlive();
       emit({ kind: "idle" });
     });
 
@@ -336,6 +370,7 @@ async function runScheduledTask(task) {
 
   const controller = new AbortController();
   currentRun = { controller };
+  startKeepAlive();
   const conversation = [{ role: "user", content: task.prompt }];
   let summary = "";
   try {
@@ -361,6 +396,7 @@ async function runScheduledTask(task) {
   } finally {
     await detachAll().catch(() => {});
     currentRun = null;
+    stopKeepAlive();
   }
   notify(task.name || "Scheduled task", summary || "Done.");
 }
