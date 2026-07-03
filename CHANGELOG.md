@@ -5,6 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **First run no longer gets stuck on "Working…".** Sending a message before a
+  model is connected now shows a clear "add a model" message and the side panel
+  returns to idle instead of hanging with a dead Stop button. Submitting with no
+  model configured opens Settings so you can connect one, and the composer
+  prompts you to do so.
+- **Inspecting a page that is itself an image** (a direct `.jpg`/`.png` URL) now
+  attaches the actual full-resolution image to the model instead of a viewport
+  screenshot of the picture floating on the browser's gray backdrop — much
+  clearer for the model to read. Non-image pages still use a screenshot.
+
 ### Changed
 
 - **Vision is now on by default** (matches other browser agents). Screenshots are

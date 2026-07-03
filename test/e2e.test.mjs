@@ -18,8 +18,10 @@ import { chromium } from "playwright";
 import { STORAGE_KEY, MSG } from "../src/common/constants.js";
 
 const EXT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const IMG_PNG = fs.readFileSync(path.join(EXT_DIR, "icons/icon16.png")); // a real, tiny PNG
 let failures = 0;
 let sawImage = false; // set by the mock when a request carries an image part
+let lastImageUrl = ""; // the most recent image data URI the mock received
 const check = (cond, msg) => {
   console.log((cond ? "ok  : " : "FAIL: ") + msg);
   if (!cond) failures++;
@@ -74,6 +76,12 @@ function decide(messages) {
   if (/screenshot|see the page/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "take_screenshot", args: {} };
     return { kind: "text", text: "I can see the page — it looks correct." };
+  }
+
+  // Direct-image inspection: take_screenshot should attach the image itself.
+  if (/inspect the image/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "take_screenshot", args: {} };
+    return { kind: "text", text: "image_inspected" };
   }
 
   // run_javascript: inject code that mutates the DOM and returns the H1.
@@ -189,6 +197,10 @@ function startServer() {
       res.writeHead(200, { "content-type": "text/html" });
       return res.end(INJECTED_PAGE);
     }
+    if (req.url === "/img.png") {
+      res.writeHead(200, { "content-type": "image/png", "access-control-allow-origin": "*" });
+      return res.end(IMG_PNG);
+    }
     if (req.url.endsWith("/models")) {
       res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
       return res.end(JSON.stringify({ data: [{ id: "mock-model" }] }));
@@ -238,7 +250,12 @@ function startServer() {
         } catch {}
         const messages = bodyObj.messages || [];
         for (const m of messages) {
-          if (Array.isArray(m.content)) for (const p of m.content) if (p && p.type === "image_url") sawImage = true;
+          if (Array.isArray(m.content))
+            for (const p of m.content)
+              if (p && p.type === "image_url") {
+                sawImage = true;
+                lastImageUrl = (p.image_url && p.image_url.url) || "";
+              }
         }
         // The plan-approval "planning" call is the only request sent with no tools.
         if (!bodyObj.tools || bodyObj.tools.length === 0) {
@@ -561,6 +578,26 @@ async function main() {
     check(mcpTools.includes("mcp_testmcp_get_weather"), `mcp: agent called the MCP tool (tools: ${mcpTools.join(", ")})`);
     check(/Weather in Paris/.test(answerOf(mcpRun.events)), `mcp: the MCP tool result reached the model (got "${answerOf(mcpRun.events)}")`);
     check(mcpRun.events.filter((e) => e.kind === "error").length === 0, "mcp: no error events");
+
+    // --- Direct-image tab: take_screenshot sends the full-res image itself ---
+    lastImageUrl = "";
+    const imgPage = await context.newPage();
+    await imgPage.goto(`${base}/img.png`, { waitUntil: "load" });
+    await imgPage.bringToFront();
+    await optPage.evaluate(() => (window.__events = []));
+    await optPage.evaluate(([rt, t]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: true }), [MSG.RUN_TASK, "inspect the image on this tab"]);
+    for (let i = 0; i < 120; i++) {
+      const evs = await optPage.evaluate(() => window.__events || []);
+      if (evs.some((e) => e.kind === "idle")) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const imgEvents = await optPage.evaluate(() => window.__events || []);
+    check(imgEvents.filter((e) => e.kind === "error").length === 0, `image-tab: no error events (${imgEvents.filter((e) => e.kind === "error").map((e) => e.error).join("; ")})`);
+    check(lastImageUrl.startsWith("data:image/png;base64,"), `image-tab: attached a PNG image (got "${lastImageUrl.slice(0, 30)}")`);
+    const imgB64 = lastImageUrl.split(",")[1] || "";
+    check(imgB64.length > 0 && imgB64.length < 2000, `image-tab: attached the direct full-res image, not a viewport screenshot (base64 len ${imgB64.length})`);
+    await imgPage.close();
+    await testPage.bringToFront();
 
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.

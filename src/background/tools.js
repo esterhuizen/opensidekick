@@ -448,6 +448,16 @@ async function screenshot(ctx) {
   } catch {
     return { ok: false, error: "No active tab to capture." };
   }
+
+  // If the tab is itself a direct image (e.g. someone opened a .jpg/.png URL),
+  // send the actual full-resolution image instead of a viewport screenshot.
+  // A viewport shot of an image document is the picture shrunk onto the
+  // browser's gray backdrop, which reads poorly for the model.
+  const direct = await fetchDirectImage(tab.url || "");
+  if (direct) {
+    return { ok: true, image: direct, note: "Loaded the full-resolution image from this tab." };
+  }
+
   try {
     // captureVisibleTab grabs the active tab of the window as a PNG data URL.
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
@@ -460,6 +470,35 @@ async function screenshot(ctx) {
         "Could not capture a screenshot (restricted page, or the tab isn't visible): " +
         (e.message || e),
     };
+  }
+}
+
+const IMAGE_URL_RE = /^https?:\/\/[^?#]+\.(jpe?g|png|gif|webp|bmp|avif)(\?[^#]*)?(#.*)?$/i;
+// Model-accepted image media types; other formats fall back to a screenshot.
+const MODEL_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+// When a tab points straight at an image, fetch its bytes and return
+// { mediaType, data } for direct attachment. Returns null (→ fall back to a
+// screenshot) if it isn't a fetchable, model-supported image.
+async function fetchDirectImage(url) {
+  if (!IMAGE_URL_RE.test(url)) return null;
+  try {
+    const res = await fetch(url, { credentials: "include" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const mediaType = (blob.type || "").toLowerCase();
+    if (!MODEL_IMAGE_TYPES.has(mediaType)) return null;
+    // Guard against very large payloads (data URI base64 ≈ 1.37× bytes).
+    if (blob.size > 12 * 1024 * 1024) return null;
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < buf.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, buf.subarray(i, i + chunk));
+    }
+    return { mediaType, data: btoa(binary) };
+  } catch {
+    return null;
   }
 }
 
