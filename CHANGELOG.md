@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **MCP tool servers:** connect remote Model Context Protocol servers (Streamable
+  HTTP transport) in Settings — the agent connects at task start, lists the
+  server's tools, exposes them (namespaced) alongside the browser tools, and
+  dispatches calls to the server. A minimal MCP client (`mcp.js`: initialize →
+  tools/list → tools/call, JSON + SSE responses, session header, optional bearer
+  auth), a "Test" button that lists a server's tools, and e2e coverage against a
+  mock MCP server (the model calls a remote `get_weather` tool and its result
+  flows back). Unit tests for the tool-name and content-flatten helpers.
 - **Workflow recording & replay:** a Record button in the side panel captures
   your page actions (clicks, typing, selects, navigations) as human-readable
   steps; save them as a named workflow and replay from the side panel's menu. The

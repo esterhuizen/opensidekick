@@ -3,6 +3,7 @@
 import { PROVIDER_PRESETS, DEFAULT_SETTINGS, MSG } from "../common/constants.js";
 import { loadConfig, saveConfig } from "../background/storage.js";
 import { listModels } from "../background/providers.js";
+import { connectServer, listTools } from "../background/mcp.js";
 
 let config;
 
@@ -29,6 +30,7 @@ async function init() {
   $("#add-provider").addEventListener("click", addProviderFromPreset);
   $("#add-prompt").addEventListener("click", addPrompt);
   $("#add-sched").addEventListener("click", addSched);
+  $("#add-mcp").addEventListener("click", addMcp);
   wireSettings();
   renderProviders();
   renderSettings();
@@ -36,6 +38,7 @@ async function init() {
   renderPrompts();
   renderScheduled();
   renderWorkflows();
+  renderMcp();
 }
 
 // -------------------------------------------------------------------------
@@ -393,6 +396,75 @@ function renderWorkflows() {
       renderWorkflows();
     });
     list.appendChild(row);
+  }
+}
+
+// -------------------------------------------------------------------------
+// MCP tool servers
+// -------------------------------------------------------------------------
+function renderMcp() {
+  const list = $("#mcp-list");
+  list.innerHTML = "";
+  $("#no-mcp").hidden = (config.mcpServers || []).length > 0;
+  for (const m of config.mcpServers) {
+    const row = document.createElement("div");
+    row.className = "sched-item";
+    row.innerHTML = `
+      <div class="field"><label>Name</label><input class="m-name" placeholder="e.g. github" /></div>
+      <div class="field"><label>Server URL</label><input class="m-url" placeholder="https://…/mcp" /></div>
+      <div class="field"><label>Auth token (optional)</label><input type="password" class="m-token" placeholder="Bearer token, if the server needs one" autocomplete="off" /></div>
+      <div class="sched-actions">
+        <label class="enabled-label"><input type="checkbox" class="m-enabled" /> Enabled</label>
+        <button class="btn small m-test">Test</button>
+        <button class="link-btn m-del">Remove</button>
+      </div>
+      <p class="interval-hint m-status"></p>`;
+    const q = (sel) => row.querySelector(sel);
+    q(".m-name").value = m.name || "";
+    q(".m-url").value = m.url || "";
+    q(".m-token").value = m.authToken || "";
+    q(".m-enabled").checked = !!m.enabled;
+    q(".m-name").addEventListener("change", (e) => { m.name = e.target.value.trim(); persist(); });
+    q(".m-url").addEventListener("change", (e) => { m.url = e.target.value.trim(); persist(); });
+    q(".m-token").addEventListener("change", (e) => { m.authToken = e.target.value.trim(); persist(); });
+    q(".m-enabled").addEventListener("change", (e) => { m.enabled = e.target.checked; persist(); });
+    q(".m-del").addEventListener("click", () => {
+      config.mcpServers = config.mcpServers.filter((x) => x.id !== m.id);
+      persist();
+      renderMcp();
+    });
+    q(".m-test").addEventListener("click", () => testMcp(m, q(".m-status"), q(".m-test")));
+    list.appendChild(row);
+  }
+}
+
+function addMcp() {
+  config.mcpServers = config.mcpServers || [];
+  config.mcpServers.push({ id: crypto.randomUUID(), name: "", url: "", authToken: "", enabled: true });
+  persist();
+  renderMcp();
+}
+
+async function testMcp(server, statusEl, btn) {
+  if (!server.url) {
+    statusEl.textContent = "Enter a server URL first.";
+    statusEl.style.color = "var(--danger)";
+    return;
+  }
+  btn.disabled = true;
+  statusEl.style.color = "var(--muted)";
+  statusEl.textContent = "Connecting…";
+  try {
+    const session = await connectServer(server);
+    const tools = await listTools(server, session);
+    const names = tools.map((t) => t.name).slice(0, 8).join(", ");
+    statusEl.textContent = `Connected — ${tools.length} tool${tools.length === 1 ? "" : "s"}${names ? ": " + names : ""}.`;
+    statusEl.style.color = "var(--good, #157a4d)";
+  } catch (e) {
+    statusEl.textContent = "Failed: " + (e.message || e);
+    statusEl.style.color = "var(--danger)";
+  } finally {
+    btn.disabled = false;
   }
 }
 

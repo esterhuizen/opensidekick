@@ -117,6 +117,13 @@ function decide(messages) {
     return { kind: "text", text: `redirect_blocked=${blocked}` };
   }
 
+  // MCP tool: call the remote weather tool, then report its result.
+  if (/weather/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "mcp_testmcp_get_weather", args: { city: "Paris" } };
+    const wr = parsed.find((p) => typeof p.result === "string" && /weather/i.test(p.result));
+    return { kind: "text", text: "mcp_answer: " + (wr ? wr.result : "?") };
+  }
+
   // Injection flag (B): navigate to a hostile page and read it.
   if (/suspicious|injection|hostile|notice page/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "navigate", args: { url: `${BASE1}/injected` } };
@@ -185,6 +192,41 @@ function startServer() {
     if (req.url.endsWith("/models")) {
       res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
       return res.end(JSON.stringify({ data: [{ id: "mock-model" }] }));
+    }
+    if (req.url === "/mcp") {
+      const h = { "content-type": "application/json", "access-control-allow-origin": "*", "mcp-session-id": "test-session" };
+      if (req.method === "DELETE") {
+        res.writeHead(200, h);
+        return res.end();
+      }
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        let msg = {};
+        try {
+          msg = JSON.parse(body);
+        } catch {}
+        if (msg.method === "initialize") {
+          res.writeHead(200, h);
+          return res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "testmcp", version: "1" } } }));
+        }
+        if (msg.method === "notifications/initialized") {
+          res.writeHead(202, h);
+          return res.end();
+        }
+        if (msg.method === "tools/list") {
+          res.writeHead(200, h);
+          return res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "get_weather", description: "Get the weather for a city", inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] } }] } }));
+        }
+        if (msg.method === "tools/call") {
+          const city = (msg.params && msg.params.arguments && msg.params.arguments.city) || "?";
+          res.writeHead(200, h);
+          return res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `Weather in ${city}: sunny, 22C` }] } }));
+        }
+        res.writeHead(200, h);
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "Unknown method" } }));
+      });
+      return;
     }
     if (req.url.endsWith("/chat/completions") && req.method === "POST") {
       let body = "";
@@ -507,6 +549,18 @@ async function main() {
     const replayOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
     check(replayOut === "Results for: dogs", `replay: agent re-ran the recorded steps (got "${replayOut}")`);
     check(replay.events.filter((e) => e.kind === "error").length === 0, "replay: no error events");
+
+    // --- MCP tool server: the agent uses a remote tool alongside the browser ---
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, mcpServers: [{ id: "m1", name: "testmcp", url: `${base}/mcp`, authToken: "", enabled: true }] },
+    ]);
+    const mcpRun = await drive("What's the weather in Paris?");
+    const mcpTools = mcpRun.events.filter((e) => e.kind === "tool_start").map((e) => e.name);
+    check(mcpRun.events.some((e) => e.kind === "mcp_connected"), "mcp: connected to the MCP server and listed its tools");
+    check(mcpTools.includes("mcp_testmcp_get_weather"), `mcp: agent called the MCP tool (tools: ${mcpTools.join(", ")})`);
+    check(/Weather in Paris/.test(answerOf(mcpRun.events)), `mcp: the MCP tool result reached the model (got "${answerOf(mcpRun.events)}")`);
+    check(mcpRun.events.filter((e) => e.kind === "error").length === 0, "mcp: no error events");
   } finally {
     server2.close();
     await context.close();

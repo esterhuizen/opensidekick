@@ -19,6 +19,7 @@ export async function loadConfig() {
     prompts: Array.isArray(stored.prompts) ? stored.prompts : [],
     scheduledTasks: Array.isArray(stored.scheduledTasks) ? stored.scheduledTasks : [],
     workflows: Array.isArray(stored.workflows) ? stored.workflows : [],
+    mcpServers: Array.isArray(stored.mcpServers) ? stored.mcpServers : [],
   };
 }
 

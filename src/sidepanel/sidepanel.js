@@ -169,6 +169,9 @@ function handleEvent(ev) {
     case "finish":
       addFinish(ev.summary);
       break;
+    case "mcp_connected":
+      addNote(`🔌 Connected to MCP server “${ev.server}” (${ev.count} tool${ev.count === 1 ? "" : "s"})`);
+      break;
     case "warning":
       addWarning(ev.text);
       break;

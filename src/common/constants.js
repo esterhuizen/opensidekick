@@ -120,6 +120,8 @@ export const DEFAULT_CONFIG = {
   scheduledTasks: [], // { id, name, prompt, url, intervalMinutes, enabled }
   // Recorded workflows replayed by the agent.
   workflows: [], // { id, name, startUrl, steps: [{ action, description }] }
+  // Remote MCP tool servers whose tools the agent can use.
+  mcpServers: [], // { id, name, url, authToken, enabled }
   settings: { ...DEFAULT_SETTINGS },
 };
 

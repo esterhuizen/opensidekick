@@ -7,6 +7,7 @@ import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
 import { evaluate, MUTATING_TOOLS, originOf } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
+import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
 
 const SYSTEM_PROMPT = `You are OpenSidekick, a browser assistant that can read and act on the web page the user is looking at, on their behalf, using tools.
 
@@ -40,6 +41,30 @@ export async function runAgent(deps) {
     if (t.cdpOnly && !s.enableCdp) return false;
     return true;
   });
+
+  // Connect enabled MCP servers and add their tools to the model's toolset.
+  const mcpDispatch = new Map(); // localName -> { server, session, remoteName }
+  const mcpSessions = []; // { server, session } to close at the end
+  for (const server of (config.mcpServers || []).filter((m) => m.enabled && m.url)) {
+    try {
+      const session = await connectServer(server);
+      mcpSessions.push({ server, session });
+      const remoteTools = await listTools(server, session);
+      for (const t of remoteTools) {
+        const localName = mcpToolName(server.name, t.name);
+        tools.push({
+          name: localName,
+          description: `[${server.name}] ${t.description || t.name}`.slice(0, 1024),
+          parameters: t.inputSchema || { type: "object", properties: {} },
+        });
+        mcpDispatch.set(localName, { server, session, remoteName: t.name });
+      }
+      emit({ kind: "mcp_connected", server: server.name, count: remoteTools.length });
+    } catch (e) {
+      emit({ kind: "warning", text: `Couldn't connect to MCP server "${server.name}": ${e.message || e}` });
+    }
+  }
+
   const sessionGrants = new Set();
   const approvedHosts = new Set(); // hostnames the user approved in plan mode
   const touchedTabs = new Set(); // tabs we showed the activity overlay on
@@ -152,6 +177,26 @@ export async function runAgent(deps) {
       }
 
       emit({ kind: "tool_start", name: call.name, args: call.args });
+
+      // External MCP tool — dispatch to the server, not the page.
+      if (mcpDispatch.has(call.name)) {
+        const d = mcpDispatch.get(call.name);
+        let toolResult;
+        try {
+          const r = await callTool(d.server, d.session, d.remoteName, call.args || {});
+          toolResult = { ok: r.isError !== true, result: flattenMcpContent(r.content) };
+        } catch (e) {
+          toolResult = { ok: false, error: "MCP tool failed: " + (e.message || e) };
+        }
+        pushToolResult(conversation, call, toolResult);
+        emit({
+          kind: "tool_end",
+          name: call.name,
+          ok: toolResult.ok !== false,
+          summary: toolResult.ok ? String(toolResult.result || "").slice(0, 60) : toolResult.error,
+        });
+        continue;
+      }
 
       // Permission gate for mutating actions.
       if (MUTATING_TOOLS.has(call.name)) {
@@ -290,6 +335,8 @@ export async function runAgent(deps) {
   } finally {
     // Always clear the on-page activity overlay, however the task ended.
     for (const t of touchedTabs) await setOverlay(t, "hide").catch(() => {});
+    // Close any MCP sessions opened for this task.
+    for (const { server, session } of mcpSessions) await closeSession(server, session).catch(() => {});
   }
 }
 

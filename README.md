@@ -61,6 +61,9 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   replay later and the agent re-runs the steps intelligently, adapting to the
   current page (it's not a brittle click-replay — the steps become instructions
   the agent follows with its normal tools).
+- **MCP tool servers** — connect remote [Model Context Protocol](https://modelcontextprotocol.io)
+  servers (GitHub, Linear, your own) so the agent can use their tools alongside
+  the browser — extending it well beyond the page.
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
 - **Local-first & private**: keys and settings live in `chrome.storage.local`;
@@ -178,10 +181,10 @@ Shipped since the first cut:
 - [x] Saved prompts / slash commands (`/`)
 - [x] Scheduled and recurring tasks (with result notifications)
 - [x] Workflow recording & replay
+- [x] Connect to MCP tool servers (extend beyond the browser)
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
-- [ ] Connect to MCP tool servers (extend beyond the browser)
 - [ ] Upload files into file inputs (via the debugger)
 - [ ] CDP-based trusted input for tougher sites
 - [ ] Prompt-injection classifier on untrusted content
