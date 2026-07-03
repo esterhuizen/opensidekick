@@ -14,6 +14,7 @@
     "test:real": "node test/real.e2e.mjs",
     "test": "npm run test:unit",
     "shots": "node test/screenshots.mjs",
+    "promo": "node test/promo.mjs",
     "zip": "rm -f opensidekick.zip && zip -r opensidekick.zip manifest.json src icons LICENSE -x '*.DS_Store'"
   },
   "devDependencies": {
