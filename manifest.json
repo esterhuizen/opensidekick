@@ -3,7 +3,7 @@
   "name": "OpenSidekick — Bring-Your-Own-LLM Browser Agent",
   "short_name": "OpenSidekick",
   "version": "0.1.0",
-  "description": "Open-source, provider-agnostic AI assistant that reads and acts on web pages. Use any LLM: OpenRouter, OpenAI, Anthropic, Google, Groq, or a local model.",
+  "description": "Open-source AI assistant that reads and acts on web pages using any LLM you choose — OpenRouter, OpenAI, Anthropic, or local.",
   "author": "OpenSidekick contributors",
   "homepage_url": "https://github.com/esterhuizen/opensidekick",
   "minimum_chrome_version": "116",
