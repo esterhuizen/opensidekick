@@ -1,6 +1,6 @@
 // Options page: manage providers, model selection, behavior, and site rules.
 
-import { PROVIDER_PRESETS, DEFAULT_SETTINGS } from "../common/constants.js";
+import { PROVIDER_PRESETS, DEFAULT_SETTINGS, MSG } from "../common/constants.js";
 import { loadConfig, saveConfig } from "../background/storage.js";
 import { listModels } from "../background/providers.js";
 
@@ -27,10 +27,14 @@ async function init() {
   }
 
   $("#add-provider").addEventListener("click", addProviderFromPreset);
+  $("#add-prompt").addEventListener("click", addPrompt);
+  $("#add-sched").addEventListener("click", addSched);
   wireSettings();
   renderProviders();
   renderSettings();
   renderPermissions();
+  renderPrompts();
+  renderScheduled();
 }
 
 // -------------------------------------------------------------------------
@@ -239,6 +243,122 @@ function renderPermissions() {
     });
     permList.appendChild(row);
   }
+}
+
+// -------------------------------------------------------------------------
+// Saved prompts
+// -------------------------------------------------------------------------
+function renderPrompts() {
+  const list = $("#prompt-list");
+  list.innerHTML = "";
+  $("#no-prompts").hidden = (config.prompts || []).length > 0;
+  for (const p of config.prompts) {
+    const row = document.createElement("div");
+    row.className = "prompt-item";
+    row.innerHTML = `
+      <div class="prompt-head">
+        <span class="prompt-cmd-prefix">/</span>
+        <input class="prompt-cmd" placeholder="command" />
+        <button class="link-btn">Remove</button>
+      </div>
+      <textarea class="prompt-body" placeholder="The prompt text this command inserts…"></textarea>`;
+    const cmd = row.querySelector(".prompt-cmd");
+    const body = row.querySelector(".prompt-body");
+    cmd.value = p.command || "";
+    body.value = p.text || "";
+    cmd.addEventListener("change", () => {
+      p.command = cmd.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+      cmd.value = p.command;
+      persist();
+    });
+    body.addEventListener("change", () => {
+      p.text = body.value;
+      persist();
+    });
+    row.querySelector(".link-btn").addEventListener("click", () => {
+      config.prompts = config.prompts.filter((x) => x.id !== p.id);
+      persist();
+      renderPrompts();
+    });
+    list.appendChild(row);
+  }
+}
+
+function addPrompt() {
+  config.prompts = config.prompts || [];
+  config.prompts.push({ id: crypto.randomUUID(), command: "", text: "" });
+  persist();
+  renderPrompts();
+}
+
+// -------------------------------------------------------------------------
+// Scheduled tasks
+// -------------------------------------------------------------------------
+function renderScheduled() {
+  const list = $("#sched-list");
+  list.innerHTML = "";
+  $("#no-sched").hidden = (config.scheduledTasks || []).length > 0;
+  for (const t of config.scheduledTasks) {
+    const row = document.createElement("div");
+    row.className = "sched-item";
+    row.innerHTML = `
+      <div class="field"><label>Name</label><input class="s-name" placeholder="e.g. Morning news digest" /></div>
+      <div class="field"><label>Prompt</label><textarea class="s-prompt" placeholder="What should it do each time?"></textarea></div>
+      <div class="field"><label>Start URL (optional)</label><input class="s-url" placeholder="leave blank to use the current tab" /></div>
+      <div class="grid2">
+        <div>
+          <label>Run every … minutes</label>
+          <input type="number" class="s-interval" min="1" />
+          <div class="interval-hint">60 = hourly · 360 = every 6h · 1440 = daily · 10080 = weekly</div>
+        </div>
+        <div><label>&nbsp;</label><label class="enabled-label"><input type="checkbox" class="s-enabled" /> Enabled</label></div>
+      </div>
+      <div class="sched-actions">
+        <button class="btn small s-run">Run now</button>
+        <button class="link-btn s-del">Remove</button>
+      </div>`;
+    const q = (sel) => row.querySelector(sel);
+    q(".s-name").value = t.name || "";
+    q(".s-prompt").value = t.prompt || "";
+    q(".s-url").value = t.url || "";
+    q(".s-interval").value = t.intervalMinutes || 1440;
+    q(".s-enabled").checked = !!t.enabled;
+    q(".s-name").addEventListener("change", (e) => { t.name = e.target.value; persist(); });
+    q(".s-prompt").addEventListener("change", (e) => { t.prompt = e.target.value; persist(); });
+    q(".s-url").addEventListener("change", (e) => { t.url = e.target.value.trim(); persist(); });
+    q(".s-interval").addEventListener("change", (e) => { t.intervalMinutes = clampInt(e.target.value, 1, 100000, 1440); persist(); });
+    q(".s-enabled").addEventListener("change", (e) => { t.enabled = e.target.checked; persist(); });
+    q(".s-run").addEventListener("click", () => runSchedNow(t, q(".s-run")));
+    q(".s-del").addEventListener("click", () => {
+      config.scheduledTasks = config.scheduledTasks.filter((x) => x.id !== t.id);
+      persist();
+      renderScheduled();
+    });
+    list.appendChild(row);
+  }
+}
+
+function addSched() {
+  config.scheduledTasks = config.scheduledTasks || [];
+  config.scheduledTasks.push({ id: crypto.randomUUID(), name: "", prompt: "", url: "", intervalMinutes: 1440, enabled: false });
+  persist();
+  renderScheduled();
+}
+
+async function runSchedNow(task, btn) {
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = "Running…";
+  try {
+    await chrome.runtime.sendMessage({ type: MSG.RUN_SCHEDULED, id: task.id });
+    btn.textContent = "Started ✓";
+  } catch {
+    btn.textContent = "Failed";
+  }
+  setTimeout(() => {
+    btn.textContent = prev;
+    btn.disabled = false;
+  }, 2500);
 }
 
 // -------------------------------------------------------------------------

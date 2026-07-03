@@ -84,6 +84,22 @@
         <p id="no-perms" class="empty-note">No site rules yet.</p>
       </section>
 
+      <section class="card">
+        <h2>4. Saved prompts</h2>
+        <p class="hint">Reusable prompts. In the chat, type <code>/</code> to insert one.</p>
+        <div id="prompt-list" class="stack"></div>
+        <p id="no-prompts" class="empty-note">No saved prompts yet.</p>
+        <button id="add-prompt" class="btn small">+ Add prompt</button>
+      </section>
+
+      <section class="card">
+        <h2>5. Scheduled tasks</h2>
+        <p class="hint">Run a prompt on a repeating schedule while Chrome is open. Unattended runs act without asking and will not confirm purchases or deletions (those are declined for safety).</p>
+        <div id="sched-list" class="stack"></div>
+        <p id="no-sched" class="empty-note">No scheduled tasks yet.</p>
+        <button id="add-sched" class="btn small">+ Add scheduled task</button>
+      </section>
+
       <footer>
         <span id="toast" class="toast" hidden>Saved</span>
         <a href="https://github.com/esterhuizen/opensidekick" target="_blank" rel="noopener">Source &amp; docs on GitHub ↗</a>

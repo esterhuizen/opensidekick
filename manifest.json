@@ -46,6 +46,7 @@
     "activeTab",
     "contextMenus",
     "notifications",
+    "alarms",
     "debugger"
   ],
   "host_permissions": ["<all_urls>"],

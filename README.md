@@ -52,6 +52,11 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   redirects / injected navigation); **forced confirmation on purchase/delete-type
   clicks** even in auto mode; and **prompt-injection flagging** of page content.
   Sensitive sites (banking, payments, crypto) always confirm per action.
+- **Saved prompts** — store reusable prompts and insert them by typing `/` in the
+  chat (with an autocomplete menu).
+- **Scheduled tasks** — run a prompt on a repeating schedule (hourly / daily /
+  weekly, or any interval) while Chrome is open; the result arrives as a
+  notification. Unattended runs act without asking and decline purchases/deletions.
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
 - **Local-first & private**: keys and settings live in `chrome.storage.local`;
@@ -166,11 +171,11 @@ Shipped since the first cut:
 - [x] On-page activity indicator with a Stop button
 - [x] Prompt-injection flagging + pre-action domain re-check + sensitive-action confirmation
 - [x] Plan-approval mode (agent proposes steps + sites, you approve before it acts)
+- [x] Saved prompts / slash commands (`/`)
+- [x] Scheduled and recurring tasks (with result notifications)
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
-- [ ] Saved prompts / slash commands (`/`)
-- [ ] Scheduled and recurring tasks
 - [ ] Workflow recording & replay
 - [ ] Connect to MCP tool servers (extend beyond the browser)
 - [ ] Upload files into file inputs (via the debugger)

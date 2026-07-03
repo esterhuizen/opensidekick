@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Saved prompts / slash commands:** store reusable prompts in Settings and
+  insert them by typing `/` in the side panel (autocomplete menu with keyboard
+  nav). Matching logic in a unit-tested `prompts.js`.
+- **Scheduled tasks:** run a prompt on a repeating schedule (`chrome.alarms`,
+  adds the `alarms` permission) while Chrome is open; optional start URL; result
+  delivered as a notification. Unattended runs use auto mode and decline
+  purchase/deletion confirmations for safety. "Run now" button in Settings.
+  Both e2e-verified (the slash menu via the real side panel; scheduled run-now
+  end to end).
 - **Vision (optional):** a `take_screenshot` tool + image support in the message
   layer for both providers, so multimodal models can see the page. Gated by a
   new "Enable vision" toggle in Settings.

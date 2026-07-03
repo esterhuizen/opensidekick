@@ -439,6 +439,42 @@ async function main() {
     check(!!(plans[0] && Array.isArray(plans[0].steps) && plans[0].steps.length > 0), "plan: the proposed plan included steps");
     check(planOut === "Results for: cats", `plan: after approval the task ran to completion (got "${planOut}")`);
     check(planRun.events.filter((e) => e.kind === "error").length === 0, "plan: no error events");
+
+    // --- Saved prompts / "/" menu (drive the real side panel UI) ---
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, prompts: [{ id: "p1", command: "summarize", text: "Summarize this page in 3 bullets." }] },
+    ]);
+    const panel = await context.newPage();
+    await panel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await panel.waitForTimeout(400); // let the panel's async prompt-load finish
+    await panel.click("#input");
+    await panel.type("#input", "/sum");
+    await panel.waitForSelector("#slash-menu .slash-item", { timeout: 4000 });
+    const menuText = await panel.$eval("#slash-menu", (el) => el.textContent);
+    check(/summarize/.test(menuText), "slash: typing / shows the matching saved prompt");
+    await panel.click("#slash-menu .slash-item");
+    const slashInputVal = await panel.$eval("#input", (el) => el.value);
+    check(slashInputVal === "Summarize this page in 3 bullets.", `slash: selecting inserts the prompt text (got "${slashInputVal}")`);
+    await panel.close();
+
+    // --- Scheduled task: "Run now" opens the URL and runs the task headlessly ---
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, scheduledTasks: [{ id: "sch1", name: "Cat search", prompt: "Search for cats on this page.", url: `${base}/page`, intervalMinutes: 100000, enabled: false }] },
+    ]);
+    const newPage = context.waitForEvent("page", { timeout: 15000 });
+    await optPage.evaluate((runType) => chrome.runtime.sendMessage({ type: runType, id: "sch1" }), MSG.RUN_SCHEDULED);
+    const schedPage = await newPage;
+    await schedPage.waitForLoadState("load").catch(() => {});
+    let schedOut = "";
+    for (let i = 0; i < 80; i++) {
+      schedOut = await schedPage.$eval("#out", (el) => el.textContent).catch(() => "");
+      if (schedOut.includes("cats")) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    check(schedOut === "Results for: cats", `scheduled: run-now opened the URL and completed the task (got "${schedOut}")`);
+    await schedPage.close();
   } finally {
     server2.close();
     await context.close();

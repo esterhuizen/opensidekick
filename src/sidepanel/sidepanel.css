@@ -327,6 +327,55 @@ body {
   border-top: 1px solid var(--border);
   padding: 8px;
   background: var(--panel);
+  position: relative;
+}
+
+.slash-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  right: 8px;
+  margin-bottom: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.14);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.slash-item {
+  padding: 7px 11px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.slash-item:last-child {
+  border-bottom: none;
+}
+.slash-item.active,
+.slash-item:hover {
+  background: var(--accent-soft);
+}
+.slash-cmd {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.slash-preview {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slash-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .composer textarea {
   width: 100%;

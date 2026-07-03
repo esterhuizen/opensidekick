@@ -1,7 +1,8 @@
 // Side panel UI controller. Talks to the service worker via runtime messages
 // and renders the streaming agent transcript.
 
-import { MSG } from "../common/constants.js";
+import { MSG, STORAGE_KEY } from "../common/constants.js";
+import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 
 const els = {
   messages: document.getElementById("messages"),
@@ -16,7 +17,12 @@ const els = {
   status: document.getElementById("status-bar"),
   contextHint: document.getElementById("context-hint"),
   setupLink: document.getElementById("setup-link"),
+  slashMenu: document.getElementById("slash-menu"),
 };
+
+let savedPrompts = [];
+let slashItems = [];
+let slashIndex = 0;
 
 let running = false;
 let newChatPending = true; // first send starts a fresh conversation
@@ -36,14 +42,19 @@ async function init() {
     else if (msg.type === MSG.PLAN_REQUEST) showPlan(msg);
   });
 
-  els.composer.addEventListener("submit", onSubmit);
-  els.input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      onSubmit(e);
-    }
+  // Saved prompts for the "/" menu — load now and keep in sync.
+  loadPrompts();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) loadPrompts();
   });
-  els.input.addEventListener("input", autoGrow);
+
+  els.composer.addEventListener("submit", onSubmit);
+  els.input.addEventListener("keydown", onInputKeydown);
+  els.input.addEventListener("input", () => {
+    autoGrow();
+    updateSlashMenu();
+  });
+  els.input.addEventListener("blur", () => setTimeout(hideSlashMenu, 150));
   els.stop.addEventListener("click", () => send({ type: MSG.STOP_TASK }));
   els.newChat.addEventListener("click", newChat);
   els.settings.addEventListener("click", () => chrome.runtime.openOptionsPage());
@@ -357,6 +368,82 @@ function setStatus(text) {
 }
 function clearStatus() {
   els.status.hidden = true;
+}
+
+// -------------------------------------------------------------------------
+// Saved prompts / "/" menu
+// -------------------------------------------------------------------------
+async function loadPrompts() {
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    savedPrompts = (raw[STORAGE_KEY] && raw[STORAGE_KEY].prompts) || [];
+  } catch {
+    savedPrompts = [];
+  }
+}
+
+function onInputKeydown(e) {
+  if (!els.slashMenu.hidden && slashItems.length) {
+    if (e.key === "ArrowDown") return e.preventDefault(), moveSlash(1);
+    if (e.key === "ArrowUp") return e.preventDefault(), moveSlash(-1);
+    if (e.key === "Enter" && !e.shiftKey) return e.preventDefault(), selectSlash(slashIndex);
+    if (e.key === "Tab") return e.preventDefault(), selectSlash(slashIndex);
+    if (e.key === "Escape") return e.preventDefault(), hideSlashMenu();
+  }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    onSubmit(e);
+  }
+}
+
+function updateSlashMenu() {
+  const val = els.input.value;
+  if (!isSlashQuery(val) || !savedPrompts.length) return hideSlashMenu();
+  slashItems = matchPrompts(savedPrompts, val);
+  slashIndex = 0;
+  renderSlashMenu();
+}
+
+function renderSlashMenu() {
+  if (!slashItems.length) {
+    els.slashMenu.innerHTML = `<div class="slash-empty">No matching saved prompts. Add some in Settings → Saved prompts.</div>`;
+    els.slashMenu.hidden = false;
+    return;
+  }
+  els.slashMenu.innerHTML = slashItems
+    .map(
+      (p, i) =>
+        `<div class="slash-item${i === slashIndex ? " active" : ""}" data-i="${i}"><span class="slash-cmd">/${escapeHtml(p.command)}</span><span class="slash-preview">${escapeHtml((p.text || "").replace(/\s+/g, " "))}</span></div>`,
+    )
+    .join("");
+  els.slashMenu.querySelectorAll(".slash-item").forEach((el) =>
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      selectSlash(Number(el.dataset.i));
+    }),
+  );
+  els.slashMenu.hidden = false;
+}
+
+function moveSlash(delta) {
+  if (!slashItems.length) return;
+  slashIndex = (slashIndex + delta + slashItems.length) % slashItems.length;
+  renderSlashMenu();
+}
+
+function selectSlash(i) {
+  const p = slashItems[i];
+  if (!p) return;
+  els.input.value = p.text || "";
+  hideSlashMenu();
+  autoGrow();
+  els.input.focus();
+}
+
+function hideSlashMenu() {
+  els.slashMenu.hidden = true;
+  els.slashMenu.innerHTML = "";
+  slashItems = [];
 }
 
 function autoGrow() {

@@ -16,6 +16,8 @@ export async function loadConfig() {
     settings: { ...DEFAULT_SETTINGS, ...(stored.settings || {}) },
     sitePermissions: { ...(stored.sitePermissions || {}) },
     providers: Array.isArray(stored.providers) ? stored.providers : [],
+    prompts: Array.isArray(stored.prompts) ? stored.prompts : [],
+    scheduledTasks: Array.isArray(stored.scheduledTasks) ? stored.scheduledTasks : [],
   };
 }
 

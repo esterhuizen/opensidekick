@@ -257,3 +257,62 @@ footer a {
   border-radius: 999px;
   font-size: 12px;
 }
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.prompt-item,
+.sched-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.prompt-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.prompt-head .prompt-cmd {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+}
+.prompt-cmd-prefix {
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+}
+textarea.prompt-body,
+textarea.s-prompt {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.sched-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.sched-actions .link-btn {
+  margin-left: auto;
+}
+.interval-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.enabled-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}

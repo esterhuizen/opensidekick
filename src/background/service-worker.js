@@ -2,7 +2,7 @@
 // Owns conversation state, routes messages between the side panel and the agent
 // loop, and mediates permission prompts.
 
-import { MSG } from "../common/constants.js";
+import { MSG, STORAGE_KEY } from "../common/constants.js";
 import { loadConfig, getActiveProvider, setSitePermission } from "./storage.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
@@ -32,7 +32,34 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Summarize this page with OpenSidekick",
     contexts: ["page"],
   });
+  reconcileAlarms();
 });
+
+chrome.runtime.onStartup.addListener(() => reconcileAlarms());
+
+// Re-register scheduled-task alarms whenever the config changes.
+const SCHED_PREFIX = "osk:sched:";
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[STORAGE_KEY]) reconcileAlarms();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith(SCHED_PREFIX)) runScheduledById(alarm.name.slice(SCHED_PREFIX.length));
+});
+
+async function reconcileAlarms() {
+  const config = await loadConfig();
+  const existing = await chrome.alarms.getAll();
+  for (const a of existing) {
+    if (a.name.startsWith(SCHED_PREFIX)) await chrome.alarms.clear(a.name);
+  }
+  for (const t of config.scheduledTasks || []) {
+    const minutes = Number(t.intervalMinutes) || 0;
+    if (t.enabled && minutes > 0) {
+      chrome.alarms.create(SCHED_PREFIX + t.id, { periodInMinutes: minutes, delayInMinutes: minutes });
+    }
+  }
+}
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let task = null;
@@ -94,6 +121,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       sendResponse({ ok: true });
       return false;
+    }
+    case MSG.RUN_SCHEDULED: {
+      runScheduledById(msg.id).then(() => sendResponse({ ok: true }));
+      return true;
     }
     default:
       return false;
@@ -177,6 +208,113 @@ function requestPermission(details) {
         pendingPermissions.delete(id);
         resolve("decline");
       });
+  });
+}
+
+// -------------------------------------------------------------------------
+// Scheduled tasks (run unattended via alarms, or "run now" from Settings)
+// -------------------------------------------------------------------------
+async function runScheduledById(id) {
+  const config = await loadConfig();
+  const task = (config.scheduledTasks || []).find((t) => t.id === id);
+  if (task) await runScheduledTask(task);
+}
+
+async function runScheduledTask(task) {
+  if (currentRun) {
+    notify(task.name, "Skipped — another task was already running.");
+    return;
+  }
+  const { config, provider } = await getActiveProvider();
+  if (!provider || !config.activeModel) {
+    notify(task.name, "Skipped — no model configured.");
+    return;
+  }
+
+  let tabId;
+  try {
+    if (task.url) {
+      const tab = await chrome.tabs.create({ url: normalizeUrl(task.url), active: true });
+      tabId = tab.id;
+      await waitTabComplete(tabId);
+    } else {
+      tabId = await getActiveContentTabId();
+    }
+  } catch {
+    notify(task.name, "Couldn't open the target page.");
+    return;
+  }
+  if (tabId == null) {
+    notify(task.name, "No page available to run on.");
+    return;
+  }
+
+  const controller = new AbortController();
+  currentRun = { controller };
+  const conversation = [{ role: "user", content: task.prompt }];
+  let summary = "";
+  try {
+    await runAgent({
+      conversation,
+      // Unattended runs act without asking (no one is watching to approve).
+      config: { ...config, settings: { ...config.settings, autonomy: "auto" } },
+      provider,
+      initialTabId: tabId,
+      signal: controller.signal,
+      emit: (ev) => {
+        if (ev.kind === "finish" && ev.summary) summary = ev.summary;
+        else if (ev.kind === "assistant_end" && ev.content) summary = ev.content;
+        else if (ev.kind === "error" && !summary) summary = "Error: " + ev.error;
+      },
+      // No UI to answer prompts — sensitive actions are declined (safe default).
+      requestPermission: async () => "decline",
+      requestPlanApproval: async () => false,
+      saveSitePermission: () => {},
+    });
+  } catch (e) {
+    summary = "Error: " + (e.message || e);
+  } finally {
+    await detachAll().catch(() => {});
+    currentRun = null;
+  }
+  notify(task.name || "Scheduled task", summary || "Done.");
+}
+
+function notify(title, message) {
+  try {
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      title: "OpenSidekick — " + (title || "Scheduled task"),
+      message: String(message || "").slice(0, 400),
+    });
+  } catch {
+    /* notifications may be unavailable */
+  }
+}
+
+function normalizeUrl(u) {
+  const s = String(u || "").trim();
+  if (!s) return s;
+  return /^[a-z]+:\/\//i.test(s) ? s : "https://" + s;
+}
+
+function waitTabComplete(tabId, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      setTimeout(resolve, 400);
+    };
+    const listener = (id, info) => {
+      if (id === tabId && info.status === "complete") finish();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(finish, timeoutMs);
+    chrome.tabs.get(tabId).then((t) => t && t.status === "complete" && finish()).catch(() => {});
   });
 }
 

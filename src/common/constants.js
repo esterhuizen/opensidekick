@@ -114,8 +114,20 @@ export const DEFAULT_CONFIG = {
   activeModel: null,
   // Per-origin permission map: { "https://example.com": "allow" | "block" }
   sitePermissions: {},
+  // Saved prompts, accessed by typing "/" in the side panel.
+  prompts: [], // { id, command, text }
+  // Recurring tasks run via chrome.alarms while Chrome is open.
+  scheduledTasks: [], // { id, name, prompt, url, intervalMinutes, enabled }
   settings: { ...DEFAULT_SETTINGS },
 };
+
+// Schedule presets shown in the options UI (minutes).
+export const SCHEDULE_PRESETS = [
+  { label: "Every hour", minutes: 60 },
+  { label: "Every 6 hours", minutes: 360 },
+  { label: "Every day", minutes: 1440 },
+  { label: "Every week", minutes: 10080 },
+];
 
 // Site categories the agent must never act on without an explicit per-action
 // override. Matched against the hostname. Deliberately conservative.
@@ -133,6 +145,7 @@ export const MSG = {
   STOP_TASK: "stop_task",
   PERMISSION_RESPONSE: "permission_response",
   PLAN_RESPONSE: "plan_response",
+  RUN_SCHEDULED: "run_scheduled",
   GET_STATE: "get_state",
   // worker -> side panel
   AGENT_EVENT: "agent_event", // { kind, ... } streamed progress
