@@ -197,9 +197,98 @@
         return type(el, msg.text, msg.submit);
       case "select":
         return select(el, msg.value);
+      case "hover":
+        return hover(el);
+      case "dblclick":
+        return dblclick(el);
+      case "contextmenu":
+        return contextmenu(el);
+      case "drag":
+        return drag(el, refMap.get(msg.toRef));
+      case "keys":
+        return pressKeys(el, msg.keys);
       default:
         return { ok: false, error: `Unknown action ${msg.action}` };
     }
+  }
+
+  function hover(el) {
+    const opts = { bubbles: true, cancelable: true, view: window };
+    el.dispatchEvent(new PointerEvent("pointerover", opts));
+    el.dispatchEvent(new MouseEvent("mouseover", opts));
+    el.dispatchEvent(new MouseEvent("mouseenter", { ...opts, bubbles: false }));
+    el.dispatchEvent(new MouseEvent("mousemove", opts));
+    return { ok: true, hovered: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase() };
+  }
+
+  function dblclick(el) {
+    click(el);
+    click(el);
+    el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
+    return { ok: true, doubleClicked: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase() };
+  }
+
+  function contextmenu(el) {
+    const opts = { bubbles: true, cancelable: true, view: window, button: 2 };
+    el.dispatchEvent(new PointerEvent("pointerdown", { ...opts, button: 2 }));
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("contextmenu", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    return { ok: true, rightClicked: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase() };
+  }
+
+  function drag(source, target) {
+    if (!target || !document.contains(target)) {
+      return { ok: false, error: "Drop target ref not found. Re-read the page." };
+    }
+    const rect = (n) => n.getBoundingClientRect();
+    const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    const a = center(rect(source));
+    const b = center(rect(target));
+    const pt = (x, y) => ({ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y });
+    source.dispatchEvent(new PointerEvent("pointerdown", pt(a.x, a.y)));
+    source.dispatchEvent(new MouseEvent("mousedown", pt(a.x, a.y)));
+    // Pointer-based drag (works for most modern DnD libraries).
+    target.dispatchEvent(new PointerEvent("pointermove", pt(b.x, b.y)));
+    target.dispatchEvent(new MouseEvent("mousemove", pt(b.x, b.y)));
+    target.dispatchEvent(new PointerEvent("pointerup", pt(b.x, b.y)));
+    target.dispatchEvent(new MouseEvent("mouseup", pt(b.x, b.y)));
+    // Best-effort native HTML5 drag events.
+    try {
+      const dt = new DataTransfer();
+      source.dispatchEvent(new DragEvent("dragstart", { ...pt(a.x, a.y), dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("dragover", { ...pt(b.x, b.y), dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("drop", { ...pt(b.x, b.y), dataTransfer: dt }));
+      source.dispatchEvent(new DragEvent("dragend", { ...pt(b.x, b.y), dataTransfer: dt }));
+    } catch {
+      /* DataTransfer/DragEvent may be unavailable; pointer path already fired */
+    }
+    return { ok: true, dragged: true };
+  }
+
+  function pressKeys(el, keys) {
+    if (!Array.isArray(keys) || !keys.length) return { ok: false, error: "No keys provided." };
+    const target = el && document.contains(el) ? el : document.activeElement || document.body;
+    const mods = keys.slice(0, -1).map((k) => k.toLowerCase());
+    const key = keys[keys.length - 1];
+    const init = {
+      bubbles: true,
+      cancelable: true,
+      key,
+      code: key.length === 1 ? "Key" + key.toUpperCase() : key,
+      ctrlKey: mods.includes("control") || mods.includes("ctrl"),
+      shiftKey: mods.includes("shift"),
+      altKey: mods.includes("alt"),
+      metaKey: mods.includes("meta") || mods.includes("cmd") || mods.includes("command"),
+    };
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      /* ignore */
+    }
+    target.dispatchEvent(new KeyboardEvent("keydown", init));
+    target.dispatchEvent(new KeyboardEvent("keyup", init));
+    return { ok: true, pressed: keys.join("+") };
   }
 
   function click(el) {

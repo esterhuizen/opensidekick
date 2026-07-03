@@ -19,6 +19,7 @@ import { STORAGE_KEY, MSG } from "../src/common/constants.js";
 
 const EXT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
+let sawImage = false; // set by the mock when a request carries an image part
 const check = (cond, msg) => {
   console.log((cond ? "ok  : " : "FAIL: ") + msg);
   if (!cond) failures++;
@@ -37,11 +38,19 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
   </script>
 </body></html>`;
 
-// --- Mock model: scripts a multi-step agentic task over the tool protocol. ---
-function decideToolCall(messages) {
+// --- Mock model: scripts multi-step agentic tasks over the tool protocol. ---
+function decide(messages) {
+  const firstUser = (messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase();
   const toolMsgs = messages.filter((m) => m.role === "tool");
   const toolCount = toolMsgs.length;
-  // Recover the element refs from the most recent read_page tool result.
+
+  // Vision scenario: take a screenshot, then confirm once the image comes back.
+  if (/screenshot|see the page/.test(firstUser)) {
+    if (toolCount === 0) return { kind: "tool", name: "take_screenshot", args: {} };
+    return { kind: "text", text: "I can see the page — it looks correct." };
+  }
+
+  // Action scenario: read page, type into the search box, click Search.
   let elements = [];
   for (const m of toolMsgs) {
     try {
@@ -52,10 +61,20 @@ function decideToolCall(messages) {
   const input = elements.find((e) => e.tag === "input");
   const button = elements.find((e) => e.tag === "button" || (e.name || "").toLowerCase() === "search");
 
-  if (toolCount === 0) return { name: "read_page", args: {} };
-  if (toolCount === 1) return { name: "type_text", args: { ref: input?.ref, text: "cats" } };
-  if (toolCount === 2) return { name: "click_element", args: { ref: button?.ref } };
-  return { name: "finish", args: { summary: 'Typed "cats" and clicked Search.' } };
+  if (toolCount === 0) return { kind: "tool", name: "read_page", args: {} };
+  if (toolCount === 1) return { kind: "tool", name: "type_text", args: { ref: input?.ref, text: "cats" } };
+  if (toolCount === 2) return { kind: "tool", name: "click_element", args: { ref: button?.ref } };
+  return { kind: "tool", name: "finish", args: { summary: 'Typed "cats" and clicked Search.' } };
+}
+
+function sseText(res, text) {
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "access-control-allow-origin": "*" });
+  const send = (o) => res.write("data: " + JSON.stringify(o) + "\n\n");
+  send({ choices: [{ delta: { role: "assistant" } }] });
+  send({ choices: [{ delta: { content: text } }] });
+  send({ choices: [{ finish_reason: "stop" }] });
+  res.write("data: [DONE]\n\n");
+  res.end();
 }
 
 function sseToolCall(res, id, name, argsObj) {
@@ -102,8 +121,12 @@ function startServer() {
         try {
           messages = JSON.parse(body).messages || [];
         } catch {}
-        const call = decideToolCall(messages);
-        sseToolCall(res, "call_" + Date.now(), call.name, call.args);
+        for (const m of messages) {
+          if (Array.isArray(m.content)) for (const p of m.content) if (p && p.type === "image_url") sawImage = true;
+        }
+        const d = decide(messages);
+        if (d.kind === "text") sseText(res, d.text);
+        else sseToolCall(res, "call_" + Date.now(), d.name, d.args);
       });
       return;
     }
@@ -162,7 +185,7 @@ async function main() {
       activeProviderId: "mock",
       activeModel: "mock-model",
       sitePermissions: {},
-      settings: { autonomy: "auto", maxSteps: 10, maxTokens: 1024, temperature: 0.4 },
+      settings: { autonomy: "auto", maxSteps: 10, maxTokens: 1024, temperature: 0.4, enableVision: true },
     };
     await optPage.evaluate(
       ([key, cfg]) => chrome.storage.local.set({ [key]: cfg }),
@@ -207,6 +230,27 @@ async function main() {
     check(finished, "agent called finish");
     const anyError = events.filter((e) => e.kind === "error");
     check(anyError.length === 0, `no error events (${anyError.map((e) => e.error).join("; ")})`);
+
+    // --- Vision path: agent takes a real screenshot; verify an image reaches
+    // the model on the next turn. ---
+    sawImage = false;
+    await optPage.evaluate(() => (window.__events = []));
+    await testPage.bringToFront();
+    await optPage.evaluate(
+      ([runType, task]) => chrome.runtime.sendMessage({ type: runType, task, newChat: true }),
+      [MSG.RUN_TASK, "Take a screenshot so you can see the page, then tell me it looks right."],
+    );
+    for (let i = 0; i < 60; i++) {
+      const evs = await optPage.evaluate(() => window.__events || []);
+      if (evs.some((e) => e.kind === "idle" || e.kind === "done")) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    const vEvents = await optPage.evaluate(() => window.__events || []);
+    const vTools = vEvents.filter((e) => e.kind === "tool_start").map((e) => e.name);
+    const vErrors = vEvents.filter((e) => e.kind === "error");
+    check(vTools.includes("take_screenshot"), "vision: agent called take_screenshot");
+    check(sawImage, "vision: a real screenshot image reached the model on the next turn");
+    check(vErrors.length === 0, `vision: no error events (${vErrors.map((e) => e.error).join("; ")})`);
   } finally {
     await context.close();
     server.close();

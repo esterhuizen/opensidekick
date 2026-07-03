@@ -18,6 +18,10 @@ export const MUTATING_TOOLS = new Set([
   "select_option",
   "navigate",
   "scroll",
+  "double_click",
+  "right_click",
+  "drag_element",
+  "press_keys",
 ]);
 
 export function originOf(url) {

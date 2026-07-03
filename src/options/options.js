@@ -191,6 +191,10 @@ function wireSettings() {
     config.settings.temperature = Number(temp.value);
     persist();
   });
+  $("#enable-vision").addEventListener("change", (e) => {
+    config.settings.enableVision = e.target.checked;
+    persist();
+  });
 }
 
 function renderSettings() {
@@ -201,6 +205,7 @@ function renderSettings() {
   $("#max-tokens").value = s.maxTokens;
   $("#temperature").value = s.temperature;
   $("#temp-value").textContent = Number(s.temperature).toFixed(2);
+  $("#enable-vision").checked = !!s.enableVision;
 }
 
 // -------------------------------------------------------------------------

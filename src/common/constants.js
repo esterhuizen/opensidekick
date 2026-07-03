@@ -96,7 +96,7 @@ export const DEFAULT_SETTINGS = {
   autonomy: "ask",
   // Hard ceiling on agent tool-calling iterations per task (prevents runaways).
   maxSteps: 25,
-  // Send a screenshot of the page to vision-capable models on each read.
+  // Expose a screenshot tool so vision-capable models can see the page on demand.
   enableVision: false,
   // Max output tokens per model call.
   maxTokens: 4096,

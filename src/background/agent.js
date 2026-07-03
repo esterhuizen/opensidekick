@@ -12,6 +12,7 @@ How to work:
 - To understand a page, call read_page. It returns interactive elements each with a numeric "ref". Act on elements by their ref.
 - Prefer read_page before acting. After an action changes the page, read it again — refs are only valid for the most recent read_page.
 - Use get_page_text to read or summarize article content.
+- If the page is visual (a canvas app, images, a custom widget) or the text map isn't enough to locate something, call take_screenshot to see it — when that tool is available.
 - Take the smallest number of steps needed. Do not repeat an action that already succeeded.
 - If a page requires login, a CAPTCHA, or a payment, stop and ask the user to handle it — never attempt to bypass these.
 - When the task is done or you are blocked, call finish with a concise summary for the user.
@@ -27,6 +28,9 @@ export async function runAgent(deps) {
   const { conversation, config, provider, initialTabId, signal, emit, requestPermission, saveSitePermission } = deps;
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
+  // Only offer the screenshot tool when the user has enabled vision (it needs a
+  // multimodal model and costs image tokens).
+  const tools = TOOL_DEFS.filter((t) => !t.visionOnly || config.settings.enableVision);
   const sessionGrants = new Set();
   let focusedTabId = initialTabId;
   const ctx = {
@@ -49,7 +53,7 @@ export async function runAgent(deps) {
         model: config.activeModel,
         system: SYSTEM_PROMPT,
         messages: conversation,
-        tools: TOOL_DEFS,
+        tools,
         maxTokens: config.settings.maxTokens,
         temperature: config.settings.temperature,
         signal,
@@ -78,6 +82,7 @@ export async function runAgent(deps) {
     }
 
     // Execute each requested tool, appending a tool result for every call.
+    const pendingImages = [];
     for (const call of result.toolCalls) {
       if (signal.aborted) {
         emit({ kind: "aborted" });
@@ -146,6 +151,13 @@ export async function runAgent(deps) {
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
       }
+      // A tool that returns an image (screenshot) can't carry it in an OpenAI
+      // tool result, so hold the image and attach it as a follow-up user
+      // message once every tool result for this turn is recorded.
+      if (toolResult && toolResult.image) {
+        pendingImages.push(toolResult.image);
+        toolResult = { ok: true, note: toolResult.note || "Image attached below." };
+      }
       pushToolResult(conversation, call, toolResult);
       emit({
         kind: "tool_end",
@@ -153,6 +165,15 @@ export async function runAgent(deps) {
         ok: toolResult.ok !== false,
         summary: summarizeResult(call.name, toolResult),
       });
+    }
+
+    if (pendingImages.length) {
+      conversation.push({
+        role: "user",
+        content: "Here " + (pendingImages.length > 1 ? "are the screenshots" : "is the screenshot") + " you requested:",
+        images: pendingImages,
+      });
+      emit({ kind: "tool_end", name: "take_screenshot", ok: true, summary: "attached image to the conversation" });
     }
   }
 
@@ -192,6 +213,18 @@ function summarizeResult(name, r) {
       return `typed "${(r.typed || "").slice(0, 40)}"${r.submitted ? " and submitted" : ""}`;
     case "select_option":
       return `selected ${r.selected || ""}`;
+    case "hover_element":
+      return `hovered ${r.hovered || ""}`;
+    case "double_click":
+      return `double-clicked ${r.doubleClicked || ""}`;
+    case "right_click":
+      return `right-clicked ${r.rightClicked || ""}`;
+    case "drag_element":
+      return "dragged element to target";
+    case "press_keys":
+      return `pressed ${r.pressed || "keys"}`;
+    case "take_screenshot":
+      return r.note || "captured screenshot";
     case "navigate":
       return `navigated to ${r.title || r.url || ""}`;
     case "open_tab":

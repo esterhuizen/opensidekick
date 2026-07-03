@@ -59,6 +59,11 @@
           <input type="range" id="temperature" min="0" max="1" step="0.05" />
           <p class="hint">Lower = more focused and deterministic. Ignored by some models.</p>
         </div>
+
+        <div class="field">
+          <label class="radio"><input type="checkbox" id="enable-vision" /> Enable vision (screenshots) <span class="tag">multimodal models</span></label>
+          <p class="hint">Adds a screenshot tool so vision-capable models (Claude, GPT-4o, Gemini, Llava…) can see the page — useful for canvas apps, image-only UIs, or visual layout. Costs image tokens; leave off for text-only models.</p>
+        </div>
       </section>
 
       <section class="card">

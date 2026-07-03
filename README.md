@@ -32,7 +32,10 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 
 - **Side-panel chat** that's aware of the current page.
 - **Agentic browser control** — reads an accessible map of the page and clicks,
-  types, selects, scrolls, and navigates by element reference.
+  types, selects, scrolls, hovers, double/right-clicks, drags, and presses
+  keyboard shortcuts, all by element reference.
+- **Optional vision** — when enabled, the agent can capture a screenshot so a
+  multimodal model can *see* the page (canvas apps, image-only UIs, layout).
 - **Multi-tab** — list, open, and switch tabs to complete a task.
 - **Any provider, any model** via two protocols:
   - OpenAI-compatible (`/chat/completions`): OpenRouter, OpenAI, Google Gemini,
@@ -139,16 +142,28 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling statement.
   apps.
 - Restricted pages (`chrome://`, the Chrome Web Store, PDFs) can't be read or
   acted on.
-- No scheduled tasks, workflow recording, or vision yet — see the roadmap.
+- No scheduled tasks or workflow recording yet — see the roadmap.
 - Scheduled/long tasks depend on the service worker staying alive; very long
   idle waits can be suspended by Chrome.
 
 ## Roadmap
 
-- [ ] Vision (send page screenshots to multimodal models)
-- [ ] Saved prompts / slash commands
+Shipped since the first cut:
+
+- [x] Vision — on-demand screenshots for multimodal models (Settings toggle)
+- [x] Fuller action set — hover, double-click, right-click, drag, keyboard shortcuts
+
+Planned, to reach and exceed feature parity with vendor-locked assistants:
+
+- [ ] Saved prompts / slash commands (`/`)
 - [ ] Scheduled and recurring tasks
 - [ ] Workflow recording & replay
+- [ ] Connect to MCP tool servers (extend beyond the browser)
+- [ ] Read console errors + network requests (debugging tasks)
+- [ ] Upload files into file inputs
+- [ ] Run-JavaScript escape hatch (opt-in)
+- [ ] Plan-approval mode + stronger prompt-injection defenses
+- [ ] On-page activity indicator
 - [ ] Firefox (WebExtensions) build
 - [ ] Optional CDP-based trusted input for tougher sites
 

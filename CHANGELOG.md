@@ -3,6 +3,25 @@
 All notable changes to OpenSidekick are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **Vision (optional):** a `take_screenshot` tool + image support in the message
+  layer for both providers, so multimodal models can see the page. Gated by a
+  new "Enable vision" toggle in Settings.
+- **Fuller action set:** `hover_element`, `double_click`, `right_click`,
+  `drag_element` (pointer-based drag-and-drop), and `press_keys` (keyboard
+  shortcuts).
+- **Real-model e2e test** (`npm run test:real`) that drives the extension against
+  a live LLM via OpenRouter; verified end-to-end with gpt-4o-mini.
+- Unit coverage for image message shaping (OpenAI + Anthropic).
+
+### Changed
+
+- The side panel renders the user's message from the worker event, so runs
+  triggered by any entry point display consistently.
+
 ## [0.1.0] — 2026-07-03
 
 Initial release.

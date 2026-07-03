@@ -68,5 +68,30 @@ eq(a[4], { role: "user", content: [{ type: "tool_result", tool_use_id: "c2", con
 eq(a.length, 5, "anthropic: exactly 5 turns (proper alternation)");
 eq(captured.tools[0].input_schema, { type: "object", properties: {} }, "anthropic: tool uses input_schema");
 
+// ---- Image (vision) message shaping ----
+const withImage = [
+  { role: "user", content: "look at this" },
+  { role: "user", content: "Here is the screenshot:", images: [{ mediaType: "image/png", data: "AAAB" }] },
+];
+
+await callModel(
+  { type: "openai", baseUrl: "https://x/v1", apiKey: "k" },
+  { model: "m", messages: withImage, tools: [] },
+);
+const oi = captured.messages;
+eq(oi[1].role, "user", "openai image: role user");
+eq(oi[1].content[0], { type: "text", text: "Here is the screenshot:" }, "openai image: text part first");
+eq(oi[1].content[1], { type: "image_url", image_url: { url: "data:image/png;base64,AAAB" } }, "openai image: image_url data URI");
+
+await callModel(
+  { type: "anthropic", baseUrl: "https://api.anthropic.com/v1", apiKey: "k" },
+  { model: "claude", maxTokens: 100, messages: withImage, tools: [] },
+);
+const ai = captured.messages;
+// The two user messages merge into one Anthropic user turn.
+eq(ai.length, 1, "anthropic image: user turns merged");
+eq(ai[0].content[1], { type: "text", text: "Here is the screenshot:" }, "anthropic image: text block");
+eq(ai[0].content[2], { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAB" } }, "anthropic image: base64 image block");
+
 console.log(fail ? "\nSOME TESTS FAILED" : "\nALL CONVERSION TESTS PASSED");
 process.exitCode = fail;

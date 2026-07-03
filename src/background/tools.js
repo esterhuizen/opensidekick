@@ -89,6 +89,76 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: "take_screenshot",
+    description:
+      "Capture a screenshot of the visible part of the current page and attach it " +
+      "as an image so you can SEE the page — layout, canvas/image content, or " +
+      "anything not captured by read_page's text. Requires a vision-capable model. " +
+      "Use when the text map isn't enough to understand or locate something.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    visionOnly: true,
+  },
+  {
+    name: "hover_element",
+    description: "Hover the pointer over an element by ref (reveals menus/tooltips).",
+    parameters: {
+      type: "object",
+      properties: { ref: { type: "integer", description: "The element ref id." } },
+      required: ["ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "double_click",
+    description: "Double-click an element by ref.",
+    parameters: {
+      type: "object",
+      properties: { ref: { type: "integer", description: "The element ref id." } },
+      required: ["ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "right_click",
+    description: "Right-click (open the context menu on) an element by ref.",
+    parameters: {
+      type: "object",
+      properties: { ref: { type: "integer", description: "The element ref id." } },
+      required: ["ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "drag_element",
+    description:
+      "Drag one element onto another (pointer-based drag-and-drop). Best-effort; " +
+      "works on most modern drag interfaces.",
+    parameters: {
+      type: "object",
+      properties: {
+        from_ref: { type: "integer", description: "Ref of the element to drag." },
+        to_ref: { type: "integer", description: "Ref of the drop target element." },
+      },
+      required: ["from_ref", "to_ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "press_keys",
+    description:
+      "Press a key or keyboard shortcut, e.g. ['Enter'] or ['Control','k']. " +
+      "Sent to the focused element, or the element with the given ref.",
+    parameters: {
+      type: "object",
+      properties: {
+        keys: { type: "array", items: { type: "string" }, description: "Keys; last is the main key, earlier ones are modifiers (Control, Shift, Alt, Meta)." },
+        ref: { type: "integer", description: "Optional element to focus first." },
+      },
+      required: ["keys"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "wait",
     description: "Wait a number of seconds for the page to update or content to load.",
     parameters: {
@@ -166,6 +236,18 @@ export async function executeTool(name, args, ctx) {
         ref: args.ref,
         value: args.value,
       });
+    case "hover_element":
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "hover", ref: args.ref });
+    case "double_click":
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "dblclick", ref: args.ref });
+    case "right_click":
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "contextmenu", ref: args.ref });
+    case "drag_element":
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+    case "press_keys":
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
+    case "take_screenshot":
+      return await screenshot(ctx);
     case "scroll":
       return await csSend(await ctx.getTabId(), {
         type: MSG.CS_ACT,
@@ -257,6 +339,29 @@ async function switchTab(ctx, tabId) {
     return { ok: true, tab_id: tabId, url: tab.url, title: tab.title };
   } catch {
     return { ok: false, error: `No tab with id ${tabId}.` };
+  }
+}
+
+async function screenshot(ctx) {
+  const tabId = await ctx.getTabId();
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { ok: false, error: "No active tab to capture." };
+  }
+  try {
+    // captureVisibleTab grabs the active tab of the window as a PNG data URL.
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    const data = dataUrl.split(",")[1];
+    return { ok: true, image: { mediaType: "image/png", data }, note: "Screenshot captured." };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        "Could not capture a screenshot (restricted page, or the tab isn't visible): " +
+        (e.message || e),
+    };
   }
 }
 

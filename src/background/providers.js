@@ -72,7 +72,16 @@ function toOpenAIMessages(messages, system) {
     if (m.role === "system") {
       out.push({ role: "system", content: m.content });
     } else if (m.role === "user") {
-      out.push({ role: "user", content: m.content });
+      if (m.images && m.images.length) {
+        const parts = [];
+        if (m.content) parts.push({ type: "text", text: m.content });
+        for (const img of m.images) {
+          parts.push({ type: "image_url", image_url: { url: `data:${img.mediaType};base64,${img.data}` } });
+        }
+        out.push({ role: "user", content: parts });
+      } else {
+        out.push({ role: "user", content: m.content });
+      }
     } else if (m.role === "assistant") {
       const msg = { role: "assistant", content: m.content || "" };
       if (m.toolCalls && m.toolCalls.length) {
@@ -185,7 +194,13 @@ function toAnthropicMessages(messages) {
   for (const m of messages) {
     if (m.role === "system") continue;
     if (m.role === "user") {
-      pushAnthropic(out, "user", [{ type: "text", text: m.content }]);
+      const blocks = [];
+      if (m.content) blocks.push({ type: "text", text: m.content });
+      for (const img of m.images || []) {
+        blocks.push({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.data } });
+      }
+      if (!blocks.length) blocks.push({ type: "text", text: m.content || "" });
+      pushAnthropic(out, "user", blocks);
     } else if (m.role === "assistant") {
       const blocks = [];
       if (m.content) blocks.push({ type: "text", text: m.content });
