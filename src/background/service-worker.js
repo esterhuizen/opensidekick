@@ -7,6 +7,7 @@ import { loadConfig, getActiveProvider, setSitePermission } from "./storage.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
 import { ensureContentScript } from "./tools.js";
+import { applyMigrations } from "./migrations.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -34,10 +35,24 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Summarize this page with OpenSidekick",
     contexts: ["page"],
   });
+  runMigrations();
   reconcileAlarms();
 });
 
-chrome.runtime.onStartup.addListener(() => reconcileAlarms());
+chrome.runtime.onStartup.addListener(() => {
+  runMigrations();
+  reconcileAlarms();
+});
+
+// Apply one-time config migrations to an existing stored config. Does nothing on
+// a fresh install (no stored config yet), so it can't clobber a config that's
+// being written concurrently at first run.
+async function runMigrations() {
+  const raw = await chrome.storage.local.get(STORAGE_KEY);
+  if (!raw[STORAGE_KEY]) return;
+  const { config, changed } = applyMigrations(raw[STORAGE_KEY]);
+  if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: config });
+}
 
 // Re-register scheduled-task alarms whenever the config changes.
 const SCHED_PREFIX = "osk:sched:";
