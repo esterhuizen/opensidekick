@@ -98,6 +98,10 @@ export const DEFAULT_SETTINGS = {
   maxSteps: 25,
   // Expose a screenshot tool so vision-capable models can see the page on demand.
   enableVision: false,
+  // Expose a run_javascript escape-hatch tool (runs code in the page).
+  enableJsTool: false,
+  // Expose console/network reading via Chrome's debugger (shows a banner).
+  enableCdp: false,
   // Max output tokens per model call.
   maxTokens: 4096,
   // Temperature for OpenAI-style requests (ignored by Anthropic newer models).

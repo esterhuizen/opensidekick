@@ -30,10 +30,15 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
   <h1>Test Search Page</h1>
   <input id="q" placeholder="Search the site" />
   <button id="go" type="button">Search</button>
+  <button id="logbtn" type="button">Log Event</button>
   <div id="out"></div>
   <script>
     document.getElementById('go').addEventListener('click', function () {
       document.getElementById('out').textContent = 'Results for: ' + document.getElementById('q').value;
+    });
+    document.getElementById('logbtn').addEventListener('click', function () {
+      console.error('cdp-boom');
+      fetch('/ping').catch(function () {});
     });
   </script>
 </body></html>`;
@@ -42,28 +47,45 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
 function decide(messages) {
   const firstUser = (messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase();
   const toolMsgs = messages.filter((m) => m.role === "tool");
-  const toolCount = toolMsgs.length;
+  const n = toolMsgs.length;
+  const parsed = toolMsgs.map((m) => { try { return JSON.parse(m.content); } catch { return {}; } });
+  let elements = [];
+  for (const p of parsed) if (Array.isArray(p.elements)) elements = p.elements;
 
-  // Vision scenario: take a screenshot, then confirm once the image comes back.
+  // Vision: take a screenshot, then confirm once the image comes back.
   if (/screenshot|see the page/.test(firstUser)) {
-    if (toolCount === 0) return { kind: "tool", name: "take_screenshot", args: {} };
+    if (n === 0) return { kind: "tool", name: "take_screenshot", args: {} };
     return { kind: "text", text: "I can see the page — it looks correct." };
   }
 
-  // Action scenario: read page, type into the search box, click Search.
-  let elements = [];
-  for (const m of toolMsgs) {
-    try {
-      const j = JSON.parse(m.content);
-      if (Array.isArray(j.elements)) elements = j.elements;
-    } catch {}
+  // run_javascript: inject code that mutates the DOM and returns the H1.
+  if (/javascript|run js|inject/.test(firstUser)) {
+    if (n === 0) {
+      return { kind: "tool", name: "run_javascript", args: { code: "document.querySelector('#out').textContent='js-ran'; return document.querySelector('h1').textContent;" } };
+    }
+    const js = parsed.find((p) => "result" in p);
+    return { kind: "text", text: "js_result=" + (js ? js.result : "?") };
   }
-  const input = elements.find((e) => e.tag === "input");
-  const button = elements.find((e) => e.tag === "button" || (e.name || "").toLowerCase() === "search");
 
-  if (toolCount === 0) return { kind: "tool", name: "read_page", args: {} };
-  if (toolCount === 1) return { kind: "tool", name: "type_text", args: { ref: input?.ref, text: "cats" } };
-  if (toolCount === 2) return { kind: "tool", name: "click_element", args: { ref: button?.ref } };
+  // CDP: read console, click a button that logs + fetches, read console/network.
+  if (/console|network|debug/.test(firstUser)) {
+    const logBtn = elements.find((e) => (e.name || "").toLowerCase().includes("log event"));
+    if (n === 0) return { kind: "tool", name: "read_console", args: {} };
+    if (n === 1) return { kind: "tool", name: "read_page", args: {} };
+    if (n === 2) return { kind: "tool", name: "click_element", args: { ref: logBtn?.ref } };
+    if (n === 3) return { kind: "tool", name: "read_console", args: {} };
+    if (n === 4) return { kind: "tool", name: "read_network", args: {} };
+    const consoleHit = parsed.some((p) => Array.isArray(p.messages) && p.messages.some((mm) => (mm.text || "").includes("cdp-boom")));
+    const netHit = parsed.some((p) => Array.isArray(p.requests) && p.requests.some((rr) => (rr.url || "").includes("/ping")));
+    return { kind: "text", text: `console_boom=${consoleHit} network_ping=${netHit}` };
+  }
+
+  // Action: read page, type into the search box, click Search.
+  const input = elements.find((e) => e.tag === "input");
+  const button = elements.find((e) => e.tag === "button" && (e.name || "").toLowerCase().includes("search"));
+  if (n === 0) return { kind: "tool", name: "read_page", args: {} };
+  if (n === 1) return { kind: "tool", name: "type_text", args: { ref: input?.ref, text: "cats" } };
+  if (n === 2) return { kind: "tool", name: "click_element", args: { ref: button?.ref } };
   return { kind: "tool", name: "finish", args: { summary: 'Typed "cats" and clicked Search.' } };
 }
 
@@ -185,7 +207,7 @@ async function main() {
       activeProviderId: "mock",
       activeModel: "mock-model",
       sitePermissions: {},
-      settings: { autonomy: "auto", maxSteps: 10, maxTokens: 1024, temperature: 0.4, enableVision: true },
+      settings: { autonomy: "auto", maxSteps: 15, maxTokens: 1024, temperature: 0.4, enableVision: true, enableJsTool: true, enableCdp: true },
     };
     await optPage.evaluate(
       ([key, cfg]) => chrome.storage.local.set({ [key]: cfg }),
@@ -251,6 +273,37 @@ async function main() {
     check(vTools.includes("take_screenshot"), "vision: agent called take_screenshot");
     check(sawImage, "vision: a real screenshot image reached the model on the next turn");
     check(vErrors.length === 0, `vision: no error events (${vErrors.map((e) => e.error).join("; ")})`);
+
+    // Helper: run a task to completion and return its events.
+    const drive = async (task) => {
+      await optPage.evaluate(() => (window.__events = []));
+      await testPage.bringToFront();
+      await optPage.evaluate(([rt, t]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: true }), [MSG.RUN_TASK, task]);
+      for (let i = 0; i < 80; i++) {
+        const evs = await optPage.evaluate(() => window.__events || []);
+        if (evs.some((e) => e.kind === "idle")) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return optPage.evaluate(() => window.__events || []);
+    };
+
+    // --- run_javascript: injected code mutates the DOM and returns a value ---
+    const jsEvents = await drive("Use JavaScript to read the page's H1 text.");
+    const jsOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
+    const jsAnswer = [...jsEvents].reverse().find((e) => e.kind === "assistant_end" && e.content)?.content || "";
+    check(jsEvents.some((e) => e.kind === "tool_start" && e.name === "run_javascript"), "js: agent called run_javascript");
+    check(jsOut === "js-ran", `js: injected code mutated the DOM (got "${jsOut}")`);
+    check(/Test Search Page/.test(jsAnswer), `js: run_javascript returned the H1 (got "${jsAnswer.slice(0, 40)}")`);
+
+    // --- read_console + read_network via the debugger (CDP) ---
+    const cdpEvents = await drive("Debug this page: check the console and network activity after triggering the log event.");
+    const cdpTools = cdpEvents.filter((e) => e.kind === "tool_start").map((e) => e.name);
+    const cdpAnswer = [...cdpEvents].reverse().find((e) => e.kind === "assistant_end" && e.content)?.content || "";
+    check(cdpTools.includes("read_console"), "cdp: agent called read_console");
+    check(cdpTools.includes("read_network"), "cdp: agent called read_network");
+    check(/console_boom=true/.test(cdpAnswer), `cdp: console error captured via debugger (got "${cdpAnswer}")`);
+    check(/network_ping=true/.test(cdpAnswer), `cdp: network request captured via debugger (got "${cdpAnswer}")`);
+    check(cdpEvents.filter((e) => e.kind === "error").length === 0, "cdp: no error events");
   } finally {
     await context.close();
     server.close();

@@ -89,6 +89,7 @@ The store review asks you to justify each permission. Ready answers:
 | `sidePanel` | To display the assistant UI in Chrome's side panel. |
 | `contextMenus` | Right-click "Ask about selection" / "Summarize page" entry points. |
 | `notifications` | Optional status notifications. |
+| `debugger` | Used only when the user turns on the optional developer tools, to read the current page's console messages and network requests for debugging. The debugger attaches only during a task and detaches as soon as it ends. |
 
 **Single purpose statement:**
 

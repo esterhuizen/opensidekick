@@ -64,6 +64,16 @@
           <label class="radio"><input type="checkbox" id="enable-vision" /> Enable vision (screenshots) <span class="tag">multimodal models</span></label>
           <p class="hint">Adds a screenshot tool so vision-capable models (Claude, GPT-4o, Gemini, Llava…) can see the page — useful for canvas apps, image-only UIs, or visual layout. Costs image tokens; leave off for text-only models.</p>
         </div>
+
+        <div class="field">
+          <label class="radio"><input type="checkbox" id="enable-js" /> Enable the run-JavaScript tool <span class="tag warn-tag">power user</span></label>
+          <p class="hint">Lets the agent run JavaScript in the page as an escape hatch (still permission-gated per site in “ask” mode). Powerful — enable only if you want it.</p>
+        </div>
+
+        <div class="field">
+          <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="tag warn-tag">debugger banner</span></label>
+          <p class="hint">Adds read_console / read_network tools for debugging pages, via Chrome’s debugger. Chrome shows a “debugging this browser” banner while a task runs; it clears when the task ends.</p>
+        </div>
       </section>
 
       <section class="card">

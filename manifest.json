@@ -45,7 +45,8 @@
     "tabs",
     "activeTab",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "debugger"
   ],
   "host_permissions": ["<all_urls>"],
   "commands": {

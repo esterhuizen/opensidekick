@@ -5,6 +5,7 @@
 import { MSG } from "../common/constants.js";
 import { loadConfig, getActiveProvider, setSitePermission } from "./storage.js";
 import { runAgent } from "./agent.js";
+import { detachAll } from "./cdp.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -141,7 +142,9 @@ async function handleRunTask(msg) {
     saveSitePermission: (origin, value) => setSitePermission(origin, value),
   })
     .catch((e) => emit({ kind: "error", error: String(e.message || e) }))
-    .finally(() => {
+    .finally(async () => {
+      // Detach the debugger (removes the "debugging this browser" banner).
+      await detachAll().catch(() => {});
       currentRun = null;
       emit({ kind: "idle" });
     });

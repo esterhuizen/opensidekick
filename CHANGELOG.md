@@ -13,8 +13,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Fuller action set:** `hover_element`, `double_click`, `right_click`,
   `drag_element` (pointer-based drag-and-drop), and `press_keys` (keyboard
   shortcuts).
+- **Run-JavaScript escape hatch (optional):** a `run_javascript` tool that runs
+  code in the page via `chrome.scripting` (world MAIN). Opt-in; permission-gated.
+- **Developer tools (optional):** `read_console` and `read_network`, backed by
+  `chrome.debugger` (CDP). The debugger attaches lazily and detaches when the
+  task ends. Opt-in via a Settings toggle; declares the `debugger` permission.
 - **Real-model e2e test** (`npm run test:real`) that drives the extension against
   a live LLM via OpenRouter; verified end-to-end with gpt-4o-mini.
+- e2e coverage for vision, run_javascript, and CDP console/network (verified that
+  `chrome.debugger` attaches and captures real console + network events).
 - Unit coverage for image message shaping (OpenAI + Anthropic).
 
 ### Changed

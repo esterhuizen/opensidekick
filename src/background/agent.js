@@ -28,9 +28,16 @@ export async function runAgent(deps) {
   const { conversation, config, provider, initialTabId, signal, emit, requestPermission, saveSitePermission } = deps;
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
-  // Only offer the screenshot tool when the user has enabled vision (it needs a
-  // multimodal model and costs image tokens).
-  const tools = TOOL_DEFS.filter((t) => !t.visionOnly || config.settings.enableVision);
+  // Offer optional tools only when the user has enabled them: vision (needs a
+  // multimodal model), the run_javascript escape hatch, and the debugger-backed
+  // console/network readers.
+  const s = config.settings;
+  const tools = TOOL_DEFS.filter((t) => {
+    if (t.visionOnly && !s.enableVision) return false;
+    if (t.jsOnly && !s.enableJsTool) return false;
+    if (t.cdpOnly && !s.enableCdp) return false;
+    return true;
+  });
   const sessionGrants = new Set();
   let focusedTabId = initialTabId;
   const ctx = {
@@ -225,6 +232,12 @@ function summarizeResult(name, r) {
       return `pressed ${r.pressed || "keys"}`;
     case "take_screenshot":
       return r.note || "captured screenshot";
+    case "run_javascript":
+      return `ran JS → ${String(r.result || "").slice(0, 60)}`;
+    case "read_console":
+      return `read ${(r.messages || []).length} console message(s)`;
+    case "read_network":
+      return `read ${(r.requests || []).length} network request(s)`;
     case "navigate":
       return `navigated to ${r.title || r.url || ""}`;
     case "open_tab":

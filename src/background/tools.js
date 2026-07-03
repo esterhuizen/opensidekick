@@ -3,6 +3,7 @@
 // provider layer converts them to the right wire format.
 
 import { MSG } from "../common/constants.js";
+import { readConsole, readNetwork } from "./cdp.js";
 
 export const TOOL_DEFS = [
   {
@@ -159,6 +160,54 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: "run_javascript",
+    description:
+      "Run JavaScript in the current page and get the result. Use `return` to " +
+      "return a value, e.g. `return document.title` or " +
+      "`return [...document.querySelectorAll('a')].map(a => a.href)`. Powerful " +
+      "escape hatch for reading or manipulating the page when the other tools " +
+      "aren't enough.",
+    parameters: {
+      type: "object",
+      properties: { code: { type: "string", description: "JavaScript to run in the page. Use return to return a value." } },
+      required: ["code"],
+      additionalProperties: false,
+    },
+    jsOnly: true,
+  },
+  {
+    name: "read_console",
+    description:
+      "Read recent browser console messages for the page (logs, warnings, errors, " +
+      "uncaught exceptions). Monitoring starts when first called; reload the page " +
+      "and read again to catch load-time errors. Useful for debugging.",
+    parameters: {
+      type: "object",
+      properties: {
+        only_errors: { type: "boolean", description: "Return only warnings and errors." },
+        limit: { type: "integer", description: "Max messages to return (default 50)." },
+      },
+      additionalProperties: false,
+    },
+    cdpOnly: true,
+  },
+  {
+    name: "read_network",
+    description:
+      "Read recent network requests the page made (method, URL, status). Monitoring " +
+      "starts when first called; reload to capture load-time requests. Useful for " +
+      "debugging failed API calls.",
+    parameters: {
+      type: "object",
+      properties: {
+        url_pattern: { type: "string", description: "Optional regex to filter request URLs." },
+        limit: { type: "integer", description: "Max requests to return (default 50)." },
+      },
+      additionalProperties: false,
+    },
+    cdpOnly: true,
+  },
+  {
     name: "wait",
     description: "Wait a number of seconds for the page to update or content to load.",
     parameters: {
@@ -248,6 +297,12 @@ export async function executeTool(name, args, ctx) {
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
     case "take_screenshot":
       return await screenshot(ctx);
+    case "run_javascript":
+      return await runJavascript(ctx, args.code);
+    case "read_console":
+      return await readConsole(await ctx.getTabId(), { onlyErrors: !!args.only_errors, limit: args.limit });
+    case "read_network":
+      return await readNetwork(await ctx.getTabId(), { urlPattern: args.url_pattern, limit: args.limit });
     case "scroll":
       return await csSend(await ctx.getTabId(), {
         type: MSG.CS_ACT,
@@ -339,6 +394,38 @@ async function switchTab(ctx, tabId) {
     return { ok: true, tab_id: tabId, url: tab.url, title: tab.title };
   } catch {
     return { ok: false, error: `No tab with id ${tabId}.` };
+  }
+}
+
+async function runJavascript(ctx, code) {
+  const tabId = await ctx.getTabId();
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [String(code || "")],
+      func: (src) => {
+        try {
+          // Function body so `return` works; runs in the page's global scope.
+          const out = new Function(src)();
+          let serialized;
+          try {
+            serialized = out === undefined ? "undefined" : JSON.stringify(out);
+          } catch {
+            serialized = String(out);
+          }
+          return { ok: true, result: serialized === undefined ? String(out) : serialized };
+        } catch (e) {
+          return { ok: false, error: String((e && e.message) || e) };
+        }
+      },
+    });
+    const r = results && results[0] && results[0].result;
+    if (!r) return { ok: false, error: "No result (restricted page, or the script couldn't run)." };
+    if (r.ok === false) return { ok: false, error: "JavaScript error: " + r.error };
+    return { ok: true, result: String(r.result).slice(0, 4000) };
+  } catch (e) {
+    return { ok: false, error: "Could not run JavaScript here: " + (e.message || e) };
   }
 }
 

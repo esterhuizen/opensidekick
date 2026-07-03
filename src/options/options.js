@@ -195,6 +195,14 @@ function wireSettings() {
     config.settings.enableVision = e.target.checked;
     persist();
   });
+  $("#enable-js").addEventListener("change", (e) => {
+    config.settings.enableJsTool = e.target.checked;
+    persist();
+  });
+  $("#enable-cdp").addEventListener("change", (e) => {
+    config.settings.enableCdp = e.target.checked;
+    persist();
+  });
 }
 
 function renderSettings() {
@@ -206,6 +214,8 @@ function renderSettings() {
   $("#temperature").value = s.temperature;
   $("#temp-value").textContent = Number(s.temperature).toFixed(2);
   $("#enable-vision").checked = !!s.enableVision;
+  $("#enable-js").checked = !!s.enableJsTool;
+  $("#enable-cdp").checked = !!s.enableCdp;
 }
 
 // -------------------------------------------------------------------------

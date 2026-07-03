@@ -36,6 +36,9 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   keyboard shortcuts, all by element reference.
 - **Optional vision** — when enabled, the agent can capture a screenshot so a
   multimodal model can *see* the page (canvas apps, image-only UIs, layout).
+- **Optional developer tools** — read the page's console messages and network
+  requests to debug ("why is this page erroring?"), and a run-JavaScript escape
+  hatch for when the other tools aren't enough. Both opt-in in Settings.
 - **Multi-tab** — list, open, and switch tabs to complete a task.
 - **Any provider, any model** via two protocols:
   - OpenAI-compatible (`/chat/completions`): OpenRouter, OpenAI, Google Gemini,
@@ -152,6 +155,8 @@ Shipped since the first cut:
 
 - [x] Vision — on-demand screenshots for multimodal models (Settings toggle)
 - [x] Fuller action set — hover, double-click, right-click, drag, keyboard shortcuts
+- [x] Run-JavaScript escape hatch (opt-in)
+- [x] Read console errors + network requests via Chrome's debugger (opt-in)
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
@@ -159,13 +164,11 @@ Planned, to reach and exceed feature parity with vendor-locked assistants:
 - [ ] Scheduled and recurring tasks
 - [ ] Workflow recording & replay
 - [ ] Connect to MCP tool servers (extend beyond the browser)
-- [ ] Read console errors + network requests (debugging tasks)
-- [ ] Upload files into file inputs
-- [ ] Run-JavaScript escape hatch (opt-in)
+- [ ] Upload files into file inputs (via the debugger)
+- [ ] CDP-based trusted input for tougher sites
 - [ ] Plan-approval mode + stronger prompt-injection defenses
 - [ ] On-page activity indicator
 - [ ] Firefox (WebExtensions) build
-- [ ] Optional CDP-based trusted input for tougher sites
 
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
