@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **"Test" button for a model (Settings → Providers).** Runs three tiny live
+  requests against the selected model and reports what actually happened —
+  ✓/⚠/✗ for **text**, **tool calling**, and **vision** — plus a plain-language
+  verdict ("This model can drive OpenSidekick"). Because it probes the real model
+  rather than a built-in list, it stays correct as new models ship and works for
+  any provider, including local ones with no metadata. Catches the common trap of
+  a vision model that has no tool-calling endpoint (e.g. some Qwen-VL endpoints)
+  before you hit it mid-task.
 - **"Need help choosing a model?" explainer in Settings.** A collapsible note in
   the Providers section explains that the agent needs a model with **tool/function
   calling** (required) and **vision** (recommended), warns that within a family

@@ -2,7 +2,7 @@
 
 import { PROVIDER_PRESETS, DEFAULT_SETTINGS, MSG } from "../common/constants.js";
 import { loadConfig, saveConfig } from "../background/storage.js";
-import { listModels } from "../background/providers.js";
+import { listModels, testModel } from "../background/providers.js";
 import { connectServer, listTools } from "../background/mcp.js";
 
 let config;
@@ -122,6 +122,10 @@ function renderProviders() {
     const fetchStatus = node.querySelector(".fetch-status");
     fetchBtn.addEventListener("click", () => fetchModels(provider, fetchBtn, fetchStatus, datalist));
 
+    const testBtn = node.querySelector(".test-model");
+    const testStatus = node.querySelector(".test-status");
+    testBtn.addEventListener("click", () => runModelTest(provider, modelInput, testBtn, testStatus));
+
     node.querySelector(".delete-provider").addEventListener("click", () => removeProvider(provider.id));
 
     providerList.appendChild(node);
@@ -159,6 +163,40 @@ async function fetchModels(provider, btn, status, datalist) {
   } catch (e) {
     status.textContent = "Could not fetch models: " + (e.message || e);
     status.style.color = "var(--danger)";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runModelTest(provider, modelInput, btn, statusEl) {
+  const model = (modelInput.value || provider.model || "").trim();
+  statusEl.hidden = false;
+  if (!model) {
+    statusEl.innerHTML = `<span class="test-line fail">Enter a model id first.</span>`;
+    return;
+  }
+  if (!provider.baseUrl) {
+    statusEl.innerHTML = `<span class="test-line fail">Set the provider's Base URL first.</span>`;
+    return;
+  }
+  btn.disabled = true;
+  statusEl.innerHTML = `<span class="test-line muted">Testing <code>${escapeHtml(model)}</code> — text, tools, vision…</span>`;
+  try {
+    const r = await testModel({ ...provider, model }, model);
+    const icon = { ok: "✓", warn: "⚠", fail: "✗" };
+    const line = (label, res) =>
+      `<span class="test-line ${res.status}">${icon[res.status]} <strong>${label}</strong> — ${escapeHtml(res.detail)}</span>`;
+    let verdict = "";
+    if (r.tools.status === "ok" && (r.vision.status === "ok" || r.vision.status === "warn")) {
+      verdict = `<span class="test-line ok">This model can drive OpenSidekick.${r.vision.status === "ok" ? " Vision works too." : ""}</span>`;
+    } else if (r.tools.status !== "ok") {
+      verdict = `<span class="test-line fail">Tools didn't work — the agent can't act with this model. Pick a tool-capable one.</span>`;
+    } else if (r.vision.status === "fail") {
+      verdict = `<span class="test-line warn">Tools work, but this model can't see images. Fine for text tasks; turn off Vision or pick a multimodal model for image work.</span>`;
+    }
+    statusEl.innerHTML = [line("Text", r.text), line("Tools", r.tools), line("Vision", r.vision), verdict].join("");
+  } catch (e) {
+    statusEl.innerHTML = `<span class="test-line fail">Test failed: ${escapeHtml(String(e.message || e))}</span>`;
   } finally {
     btn.disabled = false;
   }

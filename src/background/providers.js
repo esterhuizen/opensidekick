@@ -52,6 +52,101 @@ export async function listModels(provider) {
   return (data.data || []).map((m) => m.id).sort();
 }
 
+// A solid-red 8x8 PNG, used to probe whether a model can actually see images.
+const TEST_IMAGE = {
+  mediaType: "image/png",
+  data: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC",
+};
+
+/**
+ * Empirically probe a model for the two capabilities OpenSidekick needs: tool
+ * calling and vision. Runs three tiny live requests and reports what actually
+ * happened — so it can't go stale as new models ship, and it works for any
+ * provider (including local ones that expose no metadata).
+ *
+ * Returns { text, tools, vision }, each { status: "ok"|"warn"|"fail", detail }.
+ */
+export async function testModel(provider, model) {
+  const out = {};
+
+  // 1. Text — does the model respond at all?
+  try {
+    const r = await callModel(provider, {
+      model,
+      messages: [{ role: "user", content: "Reply with exactly one word: ready" }],
+      maxTokens: 16,
+      temperature: 0,
+    });
+    const said = (r.content || "").trim();
+    out.text = said
+      ? { status: "ok", detail: said.slice(0, 40) }
+      : { status: "warn", detail: "empty response" };
+  } catch (e) {
+    out.text = { status: "fail", detail: shortErr(e) };
+  }
+
+  // 2. Tools — does the model actually call a tool we give it?
+  try {
+    const r = await callModel(provider, {
+      model,
+      messages: [{ role: "user", content: "Call the echo tool with word set to 'ok'. Reply only via the tool." }],
+      tools: [
+        {
+          name: "echo",
+          description: "Echo a word back to the user.",
+          parameters: { type: "object", properties: { word: { type: "string" } }, required: ["word"] },
+        },
+      ],
+      maxTokens: 64,
+      temperature: 0,
+    });
+    out.tools = r.toolCalls && r.toolCalls.length
+      ? { status: "ok", detail: "called " + r.toolCalls[0].name }
+      : { status: "warn", detail: "accepted tools but didn't call one" };
+  } catch (e) {
+    const m = shortErr(e);
+    out.tools = /tool|function[- ]?call/i.test(m)
+      ? { status: "fail", detail: "no tool-calling endpoint for this model" }
+      : { status: "fail", detail: m };
+  }
+
+  // 3. Vision — can the model see a solid-red image?
+  try {
+    const r = await callModel(provider, {
+      model,
+      messages: [{ role: "user", content: "What color fills this image? Reply with just the color word.", images: [TEST_IMAGE] }],
+      maxTokens: 16,
+      temperature: 0,
+    });
+    const said = (r.content || "").trim().toLowerCase();
+    if (/red/.test(said)) out.vision = { status: "ok", detail: "identified the test image" };
+    else if (said) out.vision = { status: "warn", detail: `responded "${said.slice(0, 20)}" (couldn't identify it)` };
+    else out.vision = { status: "warn", detail: "no answer" };
+  } catch (e) {
+    const m = shortErr(e);
+    out.vision = /image|vision|multimodal|not support|modality/i.test(m)
+      ? { status: "fail", detail: "model rejected the image (no vision)" }
+      : { status: "fail", detail: m };
+  }
+
+  return out;
+}
+
+// Pull the provider's human-readable message out of our wrapped error, trimmed.
+function shortErr(e) {
+  let m = String((e && e.message) || e);
+  const j = m.match(/\{[\s\S]*\}/);
+  if (j) {
+    try {
+      const o = JSON.parse(j[0]);
+      if (o.error && o.error.message) m = o.error.message;
+    } catch {
+      /* keep the raw message */
+    }
+  }
+  return m.slice(0, 140);
+}
+
 // ---------------------------------------------------------------------------
 // OpenAI-compatible
 // ---------------------------------------------------------------------------

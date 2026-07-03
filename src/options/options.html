@@ -61,6 +61,10 @@
               and pick a well-ranked one. That check stays right as new models ship,
               instead of relying on a name that goes stale.
             </p>
+            <p>
+              Not sure a model works? Paste its id into a provider below and hit
+              <strong>Test</strong> — it runs a quick live check of tools and vision.
+            </p>
           </div>
         </details>
 
@@ -189,9 +193,11 @@
             <div class="model-row">
               <input type="text" class="model" list="" placeholder="model id" />
               <button class="btn small fetch-models">Fetch models</button>
+              <button class="btn small test-model" title="Run a quick live check for tool calling and vision">Test</button>
             </div>
             <datalist></datalist>
             <p class="hint fetch-status"></p>
+            <div class="test-status" hidden></div>
           </div>
         </div>
       </div>

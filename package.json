@@ -9,7 +9,7 @@
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
     "check": "for f in $(git ls-files '*.js' '*.mjs'); do node --check \"$f\" || exit 1; done && echo 'all JS OK'",
-    "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs && node test/safety.test.mjs && node test/plan.test.mjs && node test/prompts.test.mjs && node test/mcp.test.mjs && node test/migrations.test.mjs",
+    "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs && node test/safety.test.mjs && node test/plan.test.mjs && node test/prompts.test.mjs && node test/mcp.test.mjs && node test/migrations.test.mjs && node test/testmodel.test.mjs",
     "test:e2e": "node test/e2e.test.mjs",
     "test:real": "node test/real.e2e.mjs",
     "test": "npm run test:unit",
