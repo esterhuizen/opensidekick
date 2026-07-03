@@ -17,10 +17,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   before you hit it mid-task.
 - **"Need help choosing a model?" explainer in Settings.** A collapsible note in
   the Providers section explains that the agent needs a model with **tool/function
-  calling** (required) and **vision** (recommended), warns that within a family
-  often only a specific variant sees images (e.g. GLM's `-V`, DeepSeek's `VL`),
-  and offers an easy paste-and-go pick (`openai/gpt-4o`, or the open
-  `qwen/qwen2.5-vl-72b-instruct`).
+  calling** (required) and **vision** (recommended), warns about the traps (only a
+  specific family variant sees images; a vision model can still lack a tool-calling
+  endpoint), and lists **tested** picks that pass both — open models like
+  `qwen/qwen3-vl-30b-a3b-instruct`, `meta-llama/llama-4-maverick`,
+  `mistralai/mistral-small-3.2-24b-instruct`, `google/gemma-3-27b-it`, plus the
+  closed `openai/gpt-4o` — and points to the Test button for anything else.
 - **Approval selector under the chat box.** A one-click segmented control
   (Plan / Ask / Auto) directly below the composer lets you switch autonomy mode
   without opening Settings. It stays in sync with the Behavior setting both ways,
