@@ -1,19 +1,32 @@
 # OpenSidekick
 
-**An open-source, provider-agnostic AI agent for your browser.** OpenSidekick is a
-Chrome extension that lives in the side panel, reads the page you're on, and can
-act on it for you — click, type, fill forms, navigate, and work across tabs.
+### Your browser agent shouldn't be locked to one AI company.
 
-Unlike vendor-locked assistants, **you bring your own model.** Point it at
-OpenRouter, OpenAI, Anthropic, Google Gemini, Groq, or a local model running in
-Ollama or LM Studio. Your API keys stay in your browser and are sent only to the
-provider you choose.
+**OpenSidekick is an open-source AI agent that lives in Chrome's side panel, reads
+the page you're on, and acts on it — click, type, fill forms, navigate, work
+across tabs — using _any_ model you choose.** OpenRouter, OpenAI, Claude, Gemini,
+Groq, or a fully local model in Ollama / LM Studio. Your keys stay in your
+browser. **MIT licensed. No account, no telemetry, no middleman.**
 
-MIT licensed. No account. No telemetry. No middleman.
+<p align="center">
+  <img src="assets/demo.gif" alt="OpenSidekick reading a page and filling a newsletter field on the user's behalf, then stopping before it submits" width="460" />
+</p>
 
-![OpenSidekick reading a page and filling a form on the user's behalf](assets/screenshots/01-act.png)
+<p align="center"><sub>The agent reads the page, fills the field, and stops before submitting — driven by whichever model you configured.<br/>More: <a href="assets/screenshots/02-providers.png">bring your own model</a> · <a href="assets/screenshots/03-summarize.png">summarize &amp; extract</a></sub></p>
 
-<sub>More: [bring your own model](assets/screenshots/02-providers.png) · [summarize & extract](assets/screenshots/03-summarize.png)</sub>
+## How it compares
+
+|  | **OpenSidekick** | Claude for Chrome | Perplexity Comet |
+| --- | :---: | :---: | :---: |
+| Open source (MIT) | **✅** | ❌ | ❌ |
+| Bring your own model | **✅ any provider** | ❌ Claude only | ❌ Perplexity only |
+| Run a fully local model | **✅ Ollama / LM Studio** | ❌ | ❌ |
+| Keys & data stay in your browser | **✅** | ❌ | ❌ |
+| No account required | **✅** | ❌ | ❌ |
+| Reads & acts on the page | ✅ | ✅ | ✅ |
+| Cost | **Free** — your own API keys | Paid plan | Paid plan |
+
+<sub>Comparison reflects each product as of 2026; corrections welcome via PR.</sub>
 
 ---
 
@@ -166,7 +179,6 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling statement.
   apps.
 - Restricted pages (`chrome://`, the Chrome Web Store, PDFs) can't be read or
   acted on.
-- No scheduled tasks or workflow recording yet — see the roadmap.
 - Scheduled/long tasks depend on the service worker staying alive; very long
   idle waits can be suspended by Chrome.
 

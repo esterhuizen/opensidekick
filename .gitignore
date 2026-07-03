@@ -9,6 +9,10 @@ web-ext-artifacts/
 # Raw (unframed) screenshot intermediates — only the composed 01/02/03 are tracked
 assets/screenshots/raw-*.png
 
+# Demo recording intermediates — only the composed assets/demo.gif is tracked
+assets/demo-raw/
+assets/demo-frames/
+
 # Local secrets — never commit API keys
 *.local
 .env
