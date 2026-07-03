@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Workflow recording & replay:** a Record button in the side panel captures
+  your page actions (clicks, typing, selects, navigations) as human-readable
+  steps; save them as a named workflow and replay from the side panel's menu. The
+  content script records into steps, the worker manages recording state and
+  re-arms across navigations, and replay feeds the steps to the agent so it
+  re-runs them intelligently (not brittle click-replay). Manage/rename/delete
+  workflows in Settings. e2e-verified: recording captures real clicks/typing and
+  replay re-runs them.
 - **Saved prompts / slash commands:** store reusable prompts in Settings and
   insert them by typing `/` in the side panel (autocomplete menu with keyboard
   nav). Matching logic in a unit-tested `prompts.js`.

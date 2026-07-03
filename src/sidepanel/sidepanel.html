@@ -13,11 +13,15 @@
         <span>OpenSidekick</span>
       </div>
       <div class="topbar-actions">
+        <button id="record-btn" class="icon-btn" title="Record a workflow">⏺</button>
+        <button id="workflows-btn" class="icon-btn" title="Saved workflows">▤</button>
         <button id="new-chat" class="icon-btn" title="New chat">＋</button>
         <button id="open-settings" class="icon-btn" title="Settings">⚙</button>
       </div>
     </header>
 
+    <div id="wf-menu" class="wf-menu" hidden></div>
+    <div id="rec-banner" class="rec-banner" hidden></div>
     <div id="status-bar" class="status-bar" hidden></div>
 
     <main id="messages" class="messages" aria-live="polite">

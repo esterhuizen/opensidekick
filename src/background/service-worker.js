@@ -6,6 +6,7 @@ import { MSG, STORAGE_KEY } from "../common/constants.js";
 import { loadConfig, getActiveProvider, setSitePermission } from "./storage.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
+import { ensureContentScript } from "./tools.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -16,6 +17,7 @@ const pendingPermissions = new Map(); // id -> resolve fn
 const pendingPlans = new Map(); // id -> resolve fn
 let permissionSeq = 0;
 let pendingSeed = null; // task text queued by a context-menu action
+let recording = null; // { steps, tabId, startUrl, lastClickAt, lastUrl }
 
 // -------------------------------------------------------------------------
 // Lifecycle
@@ -126,6 +128,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       runScheduledById(msg.id).then(() => sendResponse({ ok: true }));
       return true;
     }
+    case MSG.START_RECORDING: {
+      startRecording().then(sendResponse);
+      return true;
+    }
+    case MSG.STOP_RECORDING: {
+      sendResponse(stopRecording());
+      return false;
+    }
+    case MSG.CS_STEP: {
+      if (recording && msg.step) pushStep(msg.step);
+      sendResponse({ ok: true });
+      return false;
+    }
     default:
       return false;
   }
@@ -209,6 +224,58 @@ function requestPermission(details) {
         resolve("decline");
       });
   });
+}
+
+// -------------------------------------------------------------------------
+// Workflow recording — capture user actions on a tab as steps
+// -------------------------------------------------------------------------
+async function startRecording() {
+  const tabId = await getActiveContentTabId();
+  if (tabId == null) return { ok: false, error: "No page to record on." };
+  let startUrl = "";
+  try {
+    startUrl = (await chrome.tabs.get(tabId)).url || "";
+  } catch {
+    /* ignore */
+  }
+  recording = { steps: [], tabId, startUrl, lastClickAt: 0, lastUrl: startUrl };
+  chrome.tabs.onUpdated.addListener(recordingOnUpdated);
+  await ensureContentScript(tabId);
+  chrome.tabs.sendMessage(tabId, { type: MSG.CS_RECORD, on: true }).catch(() => {});
+  return { ok: true, startUrl };
+}
+
+function stopRecording() {
+  chrome.tabs.onUpdated.removeListener(recordingOnUpdated);
+  const result = recording
+    ? { ok: true, steps: recording.steps, startUrl: recording.startUrl }
+    : { ok: true, steps: [], startUrl: "" };
+  if (recording) chrome.tabs.sendMessage(recording.tabId, { type: MSG.CS_RECORD, on: false }).catch(() => {});
+  recording = null;
+  return result;
+}
+
+function pushStep(step) {
+  if (!recording) return;
+  if (step.action === "click") recording.lastClickAt = Date.now();
+  recording.steps.push(step);
+  chrome.runtime.sendMessage({ type: MSG.RECORDING_STEP, step, count: recording.steps.length }).catch(() => {});
+}
+
+function recordingOnUpdated(tabId, changeInfo) {
+  if (!recording || tabId !== recording.tabId) return;
+  if (changeInfo.url && changeInfo.url !== recording.lastUrl) {
+    recording.lastUrl = changeInfo.url;
+    // Skip navigations that a just-recorded click caused (avoid duplicates).
+    const causedByClick = Date.now() - (recording.lastClickAt || 0) < 1500;
+    if (!causedByClick && /^https?:/i.test(changeInfo.url)) {
+      pushStep({ action: "navigate", description: `Go to ${changeInfo.url}` });
+    }
+  }
+  if (changeInfo.status === "complete") {
+    // The fresh content script on the new page needs re-arming.
+    chrome.tabs.sendMessage(tabId, { type: MSG.CS_RECORD, on: true }).catch(() => {});
+  }
 }
 
 // -------------------------------------------------------------------------

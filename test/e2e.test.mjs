@@ -125,13 +125,15 @@ function decide(messages) {
     return { kind: "text", text: `injection_flagged=${flagged}` };
   }
 
-  // Action: read page, type into the search box, click Search.
+  // Action: read page, type into the search box, click Search. The search term
+  // follows the request (so a replayed "dogs" workflow types "dogs").
+  const term = /\bdogs\b/.test(firstUser) ? "dogs" : "cats";
   const input = elements.find((e) => e.tag === "input");
   const button = elements.find((e) => e.tag === "button" && (e.name || "").toLowerCase().includes("search"));
   if (n === 0) return { kind: "tool", name: "read_page", args: {} };
-  if (n === 1) return { kind: "tool", name: "type_text", args: { ref: input?.ref, text: "cats" } };
+  if (n === 1) return { kind: "tool", name: "type_text", args: { ref: input?.ref, text: term } };
   if (n === 2) return { kind: "tool", name: "click_element", args: { ref: button?.ref } };
-  return { kind: "tool", name: "finish", args: { summary: 'Typed "cats" and clicked Search.' } };
+  return { kind: "tool", name: "finish", args: { summary: `Typed "${term}" and clicked Search.` } };
 }
 
 function sseText(res, text) {
@@ -475,6 +477,36 @@ async function main() {
     }
     check(schedOut === "Results for: cats", `scheduled: run-now opened the URL and completed the task (got "${schedOut}")`);
     await schedPage.close();
+
+    // --- Workflow recording & replay ---
+    await testPage.bringToFront();
+    await testPage.evaluate(() => {
+      document.querySelector("#out").textContent = "";
+      document.querySelector("#q").value = "";
+    });
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.START_RECORDING);
+    await testPage.waitForTimeout(400); // let the content script arm
+    await testPage.click("#q");
+    await testPage.type("#q", "dogs"); // real keystrokes so a change event fires on blur
+    await testPage.click("#go"); // blur → change (type step), then click step
+    await testPage.waitForTimeout(300);
+    const stopRes = await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.STOP_RECORDING);
+    const recSteps = (stopRes && stopRes.steps) || [];
+    const recDescs = recSteps.map((s) => s.description).join(" | ");
+    check(recSteps.some((s) => s.action === "type" && /dogs/.test(s.description)), `record: captured the typed value (got "${recDescs}")`);
+    check(recSteps.some((s) => s.action === "click" && /search/i.test(s.description)), `record: captured the button click (got "${recDescs}")`);
+
+    // Save the workflow, clear the page, and replay it via the agent.
+    const wf = { id: "wf1", name: "Dog search", startUrl: `${base}/page`, steps: recSteps };
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, { ...config, workflows: [wf] }]);
+    await testPage.evaluate(() => {
+      document.querySelector("#out").textContent = "";
+      document.querySelector("#q").value = "";
+    });
+    const replay = await drive(`Replay workflow "${wf.name}": ${recSteps.map((s) => s.description).join("; ")}`);
+    const replayOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
+    check(replayOut === "Results for: dogs", `replay: agent re-ran the recorded steps (got "${replayOut}")`);
+    check(replay.events.filter((e) => e.kind === "error").length === 0, "replay: no error events");
   } finally {
     server2.close();
     await context.close();

@@ -18,6 +18,7 @@ export async function loadConfig() {
     providers: Array.isArray(stored.providers) ? stored.providers : [],
     prompts: Array.isArray(stored.prompts) ? stored.prompts : [],
     scheduledTasks: Array.isArray(stored.scheduledTasks) ? stored.scheduledTasks : [],
+    workflows: Array.isArray(stored.workflows) ? stored.workflows : [],
   };
 }
 

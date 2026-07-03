@@ -118,6 +118,8 @@ export const DEFAULT_CONFIG = {
   prompts: [], // { id, command, text }
   // Recurring tasks run via chrome.alarms while Chrome is open.
   scheduledTasks: [], // { id, name, prompt, url, intervalMinutes, enabled }
+  // Recorded workflows replayed by the agent.
+  workflows: [], // { id, name, startUrl, steps: [{ action, description }] }
   settings: { ...DEFAULT_SETTINGS },
 };
 
@@ -146,11 +148,17 @@ export const MSG = {
   PERMISSION_RESPONSE: "permission_response",
   PLAN_RESPONSE: "plan_response",
   RUN_SCHEDULED: "run_scheduled",
+  START_RECORDING: "start_recording",
+  STOP_RECORDING: "stop_recording",
   GET_STATE: "get_state",
   // worker -> side panel
   AGENT_EVENT: "agent_event", // { kind, ... } streamed progress
   PERMISSION_REQUEST: "permission_request",
   PLAN_REQUEST: "plan_request",
+  RECORDING_STEP: "recording_step", // { step } as the user records
+  // worker <-> content script
+  CS_RECORD: "cs_record", // { on: bool } arm/disarm recording listeners
+  CS_STEP: "cs_step", // content script -> worker: a captured step
   // worker <-> content script
   CS_READ_PAGE: "cs_read_page",
   CS_GET_TEXT: "cs_get_text",

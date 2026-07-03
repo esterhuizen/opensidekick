@@ -35,6 +35,10 @@
         case "cs_overlay":
           sendResponse(overlay(msg));
           return true;
+        case "cs_record":
+          setRecording(!!msg.on);
+          sendResponse({ ok: true });
+          return true;
         default:
           sendResponse({ ok: false, error: "Unknown message" });
           return true;
@@ -390,6 +394,81 @@
     else if (dir === "up") window.scrollBy({ top: -Math.round(window.innerHeight * 0.8) });
     else window.scrollBy({ top: Math.round(window.innerHeight * 0.8) });
     return { ok: true, direction: dir, scrollY: Math.round(window.scrollY) };
+  }
+
+  // -------------------------------------------------------------------------
+  // Workflow recording — capture user actions as human-readable steps
+  // -------------------------------------------------------------------------
+  let recording = false;
+
+  function setRecording(on) {
+    if (on === recording) return;
+    recording = on;
+    const m = on ? "addEventListener" : "removeEventListener";
+    document[m]("click", onRecClick, true);
+    document[m]("change", onRecChange, true);
+    document[m]("keydown", onRecKey, true);
+  }
+
+  function sendStep(step) {
+    try {
+      chrome.runtime.sendMessage({ type: "cs_step", step });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function onRecClick(e) {
+    const el = findInteractive(e.target);
+    if (!el || el.closest("#opensidekick-overlay")) return;
+    const tag = el.tagName.toLowerCase();
+    // Clicking a text field just focuses it — the typing step already covers it.
+    if (tag === "textarea" || (tag === "input" && /^(text|search|email|password|url|tel|number|)$/i.test(el.getAttribute("type") || ""))) return;
+    const name = accessibleName(el).slice(0, 60);
+    const kind = tag === "a" ? "link" : tag === "button" || el.getAttribute("role") === "button" ? "button" : "element";
+    sendStep({ action: "click", description: `Click the ${name ? `"${name}" ` : ""}${kind}` });
+  }
+
+  function onRecChange(e) {
+    const el = e.target;
+    const tag = el.tagName && el.tagName.toLowerCase();
+    if (tag === "input" || tag === "textarea") {
+      if (el.type === "password") {
+        sendStep({ action: "type", description: `Enter the password into the ${fieldName(el)} field` });
+        return;
+      }
+      const val = (el.value || "").slice(0, 80);
+      if (val) sendStep({ action: "type", description: `Type "${val}" into the ${fieldName(el)} field` });
+    } else if (tag === "select") {
+      const opt = el.options[el.selectedIndex];
+      const label = opt ? opt.textContent.trim().slice(0, 40) : el.value;
+      sendStep({ action: "select", description: `Choose "${label}" in the ${fieldName(el)} dropdown` });
+    }
+  }
+
+  function onRecKey(e) {
+    if (e.key !== "Enter") return;
+    const tag = e.target.tagName && e.target.tagName.toLowerCase();
+    if (tag === "input" || tag === "textarea") sendStep({ action: "key", description: "Press Enter to submit" });
+  }
+
+  function findInteractive(node) {
+    let el = node;
+    while (el && el !== document.documentElement) {
+      const tag = el.tagName && el.tagName.toLowerCase();
+      const role = el.getAttribute && el.getAttribute("role");
+      if (["a", "button", "input", "select", "textarea", "summary"].includes(tag) || role === "button" || role === "link" || (el.hasAttribute && el.hasAttribute("onclick"))) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function fieldName(el) {
+    const n = accessibleName(el);
+    if (n) return `"${n.slice(0, 40)}"`;
+    return el.getAttribute("name") || el.getAttribute("type") || "input";
   }
 
   // -------------------------------------------------------------------------

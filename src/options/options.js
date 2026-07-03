@@ -35,6 +35,7 @@ async function init() {
   renderPermissions();
   renderPrompts();
   renderScheduled();
+  renderWorkflows();
 }
 
 // -------------------------------------------------------------------------
@@ -359,6 +360,40 @@ async function runSchedNow(task, btn) {
     btn.textContent = prev;
     btn.disabled = false;
   }, 2500);
+}
+
+// -------------------------------------------------------------------------
+// Workflows
+// -------------------------------------------------------------------------
+function renderWorkflows() {
+  const list = $("#wf-list");
+  list.innerHTML = "";
+  $("#no-wf").hidden = (config.workflows || []).length > 0;
+  for (const w of config.workflows) {
+    const row = document.createElement("div");
+    row.className = "prompt-item";
+    const steps = (w.steps || []).map((s) => `<li>${escapeHtml(s.description || String(s))}</li>`).join("");
+    row.innerHTML = `
+      <div class="prompt-head">
+        <input class="prompt-cmd wf-name" placeholder="Workflow name" />
+        <button class="link-btn">Remove</button>
+      </div>
+      ${w.startUrl ? `<div class="interval-hint">Starts at ${escapeHtml(w.startUrl)}</div>` : ""}
+      <ol class="wf-steps">${steps}</ol>`;
+    const nameInput = row.querySelector(".wf-name");
+    nameInput.value = w.name || "";
+    nameInput.addEventListener("change", () => {
+      w.name = nameInput.value.trim() || "Untitled workflow";
+      nameInput.value = w.name;
+      persist();
+    });
+    row.querySelector(".link-btn").addEventListener("click", () => {
+      config.workflows = config.workflows.filter((x) => x.id !== w.id);
+      persist();
+      renderWorkflows();
+    });
+    list.appendChild(row);
+  }
 }
 
 // -------------------------------------------------------------------------

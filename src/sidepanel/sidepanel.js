@@ -18,11 +18,17 @@ const els = {
   contextHint: document.getElementById("context-hint"),
   setupLink: document.getElementById("setup-link"),
   slashMenu: document.getElementById("slash-menu"),
+  recordBtn: document.getElementById("record-btn"),
+  workflowsBtn: document.getElementById("workflows-btn"),
+  recBanner: document.getElementById("rec-banner"),
+  wfMenu: document.getElementById("wf-menu"),
 };
 
 let savedPrompts = [];
 let slashItems = [];
 let slashIndex = 0;
+let recording = false;
+let recCount = 0;
 
 let running = false;
 let newChatPending = true; // first send starts a fresh conversation
@@ -40,7 +46,14 @@ async function init() {
     if (msg.type === MSG.AGENT_EVENT) handleEvent(msg);
     else if (msg.type === MSG.PERMISSION_REQUEST) showPermission(msg);
     else if (msg.type === MSG.PLAN_REQUEST) showPlan(msg);
+    else if (msg.type === MSG.RECORDING_STEP) {
+      recCount = msg.count || recCount + 1;
+      updateRecBanner();
+    }
   });
+
+  els.recordBtn.addEventListener("click", toggleRecording);
+  els.workflowsBtn.addEventListener("click", toggleWorkflowsMenu);
 
   // Saved prompts for the "/" menu — load now and keep in sync.
   loadPrompts();
@@ -444,6 +457,130 @@ function hideSlashMenu() {
   els.slashMenu.hidden = true;
   els.slashMenu.innerHTML = "";
   slashItems = [];
+}
+
+// -------------------------------------------------------------------------
+// Workflow recording & replay
+// -------------------------------------------------------------------------
+async function toggleRecording() {
+  if (recording) return stopRec();
+  const res = await send({ type: MSG.START_RECORDING });
+  if (!res || res.ok === false) return addError((res && res.error) || "Couldn't start recording.");
+  recording = true;
+  recCount = 0;
+  els.recordBtn.classList.add("recording");
+  els.empty.hidden = true;
+  hideWorkflowsMenu();
+  updateRecBanner();
+}
+
+async function stopRec() {
+  const res = await send({ type: MSG.STOP_RECORDING });
+  recording = false;
+  recCount = 0;
+  els.recordBtn.classList.remove("recording");
+  els.recBanner.hidden = true;
+  const steps = (res && res.steps) || [];
+  if (steps.length) showSaveWorkflow(steps, (res && res.startUrl) || "");
+  else addNote("Recording stopped — no actions were captured.");
+}
+
+function updateRecBanner() {
+  if (!recording) return (els.recBanner.hidden = true);
+  els.recBanner.hidden = false;
+  els.recBanner.innerHTML = `<span class="rec-dot"></span><span class="grow">Recording — ${recCount} step${recCount === 1 ? "" : "s"}. Do things on the page…</span><button id="rec-stop">Stop</button>`;
+  els.recBanner.querySelector("#rec-stop").addEventListener("click", stopRec);
+}
+
+function showSaveWorkflow(steps, startUrl) {
+  const el = document.createElement("div");
+  el.className = "perm-card";
+  const list = steps.map((s) => `<li>${escapeHtml(s.description || String(s))}</li>`).join("");
+  el.innerHTML = `
+    <h3>Save this workflow?</h3>
+    <ol class="plan-steps">${list}</ol>
+    <input id="wf-name" placeholder="Name (e.g. Book a meeting room)" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;margin-bottom:8px" />
+    <div class="perm-buttons"><button class="primary" data-save="1">Save</button><button data-save="0">Discard</button></div>`;
+  el.querySelectorAll("button").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (btn.dataset.save === "1") {
+        const name = (el.querySelector("#wf-name").value || "").trim() || "Untitled workflow";
+        await saveWorkflow({ id: crypto.randomUUID(), name, startUrl, steps });
+        el.querySelector(".perm-buttons").outerHTML = `<p style="margin:0;font-size:12px;color:var(--good, #157a4d)">Saved “${escapeHtml(name)}”. Replay it from the ▤ menu.</p>`;
+      } else {
+        el.remove();
+      }
+    }),
+  );
+  els.messages.appendChild(el);
+  scroll();
+}
+
+function toggleWorkflowsMenu() {
+  if (!els.wfMenu.hidden) return hideWorkflowsMenu();
+  loadWorkflows().then(renderWorkflowsMenu);
+  document.addEventListener("mousedown", wfOutside, true);
+}
+
+function wfOutside(e) {
+  if (els.wfMenu.contains(e.target) || e.target === els.workflowsBtn) return;
+  hideWorkflowsMenu();
+}
+
+function renderWorkflowsMenu(wfs) {
+  if (!wfs.length) {
+    els.wfMenu.innerHTML = `<div class="wf-empty">No saved workflows yet. Click ⏺ to record one.</div>`;
+  } else {
+    els.wfMenu.innerHTML = wfs
+      .map((w, i) => `<div class="wf-item" data-i="${i}"><span class="wf-name">▶ ${escapeHtml(w.name)}</span><span class="wf-count">${(w.steps || []).length} steps</span></div>`)
+      .join("");
+    els.wfMenu.querySelectorAll(".wf-item").forEach((el) =>
+      el.addEventListener("click", () => replayWorkflow(wfs[Number(el.dataset.i)])),
+    );
+  }
+  els.wfMenu.hidden = false;
+}
+
+function hideWorkflowsMenu() {
+  els.wfMenu.hidden = true;
+  document.removeEventListener("mousedown", wfOutside, true);
+}
+
+function replayWorkflow(wf) {
+  if (!wf || running) return;
+  hideWorkflowsMenu();
+  els.empty.hidden = true;
+  addNote(`▶ Replaying workflow “${wf.name}”`);
+  send({ type: MSG.RUN_TASK, task: workflowPrompt(wf), newChat: newChatPending });
+  newChatPending = false;
+  setRunning(true);
+}
+
+function workflowPrompt(wf) {
+  const steps = (wf.steps || []).map((s, i) => `${i + 1}. ${s.description || s}`).join("\n");
+  let p = `Replay this saved workflow named "${wf.name}". Perform each step in order on the page using your tools (read_page, click, type, and so on). Adapt to the current page if it differs slightly, and stop if a step can't be completed.\n\nSteps:\n${steps}`;
+  if (wf.startUrl) p = `First make sure the current tab is at ${wf.startUrl} (navigate there if it isn't). Then ${p}`;
+  return p;
+}
+
+async function loadWorkflows() {
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    return (raw[STORAGE_KEY] && raw[STORAGE_KEY].workflows) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveWorkflow(wf) {
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    const cfg = raw[STORAGE_KEY] || {};
+    cfg.workflows = [...(cfg.workflows || []), wf];
+    await chrome.storage.local.set({ [STORAGE_KEY]: cfg });
+  } catch (e) {
+    addError("Couldn't save workflow: " + (e.message || e));
+  }
 }
 
 function autoGrow() {
