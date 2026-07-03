@@ -50,4 +50,4 @@ machine at all.
 
 ## Contact
 
-Open an issue at https://github.com/OWNER/opensidekick for questions.
+Open an issue at https://github.com/esterhuizen/opensidekick for questions.

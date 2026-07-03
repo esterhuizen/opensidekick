@@ -5,10 +5,16 @@
   "type": "module",
   "description": "Open-source, provider-agnostic AI browser agent Chrome extension. Bring your own LLM.",
   "license": "MIT",
-  "homepage": "https://github.com/OWNER/opensidekick",
+  "homepage": "https://github.com/esterhuizen/opensidekick",
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
     "check": "for f in $(git ls-files '*.js' '*.mjs'); do node --check \"$f\" || exit 1; done && echo 'all JS OK'",
+    "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs",
+    "test:e2e": "node test/e2e.test.mjs",
+    "test": "npm run test:unit",
     "zip": "rm -f opensidekick.zip && zip -r opensidekick.zip manifest.json src icons LICENSE -x '*.DS_Store'"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
   }
 }

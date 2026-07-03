@@ -62,7 +62,7 @@ SAFE BY DEFAULT
 • Sensitive sites (banking, payments, crypto) always ask per action
 • The agent won't bypass logins or CAPTCHAs — it hands those back to you
 
-Open source: https://github.com/OWNER/opensidekick
+Open source: https://github.com/esterhuizen/opensidekick
 ```
 
 **Screenshots:** 1280×800 or 640×400 PNG/JPEG (at least one, up to five).

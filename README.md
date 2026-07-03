@@ -11,7 +11,7 @@ provider you choose.
 
 MIT licensed. No account. No telemetry. No middleman.
 
-<!-- Replace OWNER with your GitHub org/user throughout, and add a screenshot here. -->
+<!-- Add a screenshot / demo GIF here. -->
 
 ---
 

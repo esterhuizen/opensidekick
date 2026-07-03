@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Open-source, provider-agnostic AI assistant that reads and acts on web pages. Use any LLM: OpenRouter, OpenAI, Anthropic, Google, Groq, or a local model.",
   "author": "OpenSidekick contributors",
-  "homepage_url": "https://github.com/OWNER/opensidekick",
+  "homepage_url": "https://github.com/esterhuizen/opensidekick",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

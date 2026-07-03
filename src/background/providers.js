@@ -60,7 +60,7 @@ function openaiHeaders(provider) {
   const h = { "content-type": "application/json" };
   if (provider.apiKey) h["authorization"] = `Bearer ${provider.apiKey}`;
   // OpenRouter attribution headers (harmless for other providers).
-  h["http-referer"] = "https://github.com/OWNER/opensidekick";
+  h["http-referer"] = "https://github.com/esterhuizen/opensidekick";
   h["x-title"] = "OpenSidekick";
   return h;
 }
