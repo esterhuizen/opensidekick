@@ -8,6 +8,8 @@ across tabs — using _any_ model you choose.** OpenRouter, OpenAI, Claude, Gemi
 Groq, or a fully local model in Ollama / LM Studio. Your keys stay in your
 browser. **MIT licensed. No account, no telemetry, no middleman.**
 
+<p align="center"><a href="https://opensidekick.app"><strong>🌐 opensidekick.app</strong></a></p>
+
 <p align="center">
   <img src="assets/demo.gif" alt="OpenSidekick reading a page and filling a newsletter field on the user's behalf, then stopping before it submits" width="460" />
 </p>

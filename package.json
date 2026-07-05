@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Open-source, provider-agnostic AI browser agent Chrome extension. Bring your own LLM.",
   "license": "MIT",
-  "homepage": "https://github.com/esterhuizen/opensidekick",
+  "homepage": "https://opensidekick.app",
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
     "check": "for f in $(git ls-files '*.js' '*.mjs'); do node --check \"$f\" || exit 1; done && echo 'all JS OK'",
