@@ -30,6 +30,8 @@ let slashItems = [];
 let slashIndex = 0;
 let recording = false;
 let recCount = 0;
+let recGen = 0; // bumped on every start/stop so a slow START_RECORDING reply can't
+// resurrect the banner after the user already stopped.
 let configured = false;
 
 let running = false;
@@ -532,22 +534,39 @@ function hideSlashMenu() {
 // -------------------------------------------------------------------------
 async function toggleRecording() {
   if (recording) return stopRec();
-  const res = await send({ type: MSG.START_RECORDING });
-  if (!res || res.ok === false) return addError((res && res.error) || "Couldn't start recording.");
+  // Reflect the recording state immediately — starting can take a moment while the
+  // content script is injected, and without feedback users click again, which used
+  // to spawn a second start whose late reply resurrected the banner after Stop.
+  const gen = ++recGen;
   recording = true;
   recCount = 0;
   els.recordBtn.classList.add("recording");
   els.empty.hidden = true;
   hideWorkflowsMenu();
   updateRecBanner();
+
+  const res = await send({ type: MSG.START_RECORDING });
+  if (gen !== recGen) {
+    // Stopped (or re-toggled) before the start completed. If we're not recording
+    // anymore, make sure the worker isn't left recording either.
+    if (!recording) send({ type: MSG.STOP_RECORDING });
+    return;
+  }
+  if (!res || res.ok === false) {
+    recording = false;
+    els.recordBtn.classList.remove("recording");
+    els.recBanner.hidden = true;
+    return addError((res && res.error) || "Couldn't start recording.");
+  }
 }
 
 async function stopRec() {
-  const res = await send({ type: MSG.STOP_RECORDING });
+  recGen++; // invalidate any start still in flight so its reply can't re-show the banner
   recording = false;
   recCount = 0;
   els.recordBtn.classList.remove("recording");
   els.recBanner.hidden = true;
+  const res = await send({ type: MSG.STOP_RECORDING });
   const steps = (res && res.steps) || [];
   if (steps.length) showSaveWorkflow(steps, (res && res.startUrl) || "");
   else addNote("Recording stopped — no actions were captured.");

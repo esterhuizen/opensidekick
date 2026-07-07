@@ -30,6 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The "Recording…" banner no longer gets stuck after Stop.** Starting a
+  recording could take a moment (while the content script is injected) with no
+  visual feedback, so a quick second click spawned a second start whose late
+  reply re-showed the banner *after* you'd already stopped. The panel now shows
+  the recording state immediately and ignores a start that resolves after a stop,
+  so Stop always clears the banner. Covered by `test/recording.e2e.mjs`.
 - **Stop and slow permission answers no longer wedge the panel.** Chrome can
   terminate the extension's service worker while the agent waits for you to
   answer a permission prompt; a later "Allow" then landed on a fresh worker that
