@@ -196,7 +196,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       pendingPlans.clear();
       // Always un-stick the panel: if the run is live its finally also emits idle
       // (harmless), and if the worker restarted there's no run to end otherwise.
-      if (!currentRun) stopKeepAlive();
+      if (!currentRun && !recording) stopKeepAlive();
       emit({ kind: "idle" });
       sendResponse({ ok: true });
       return false;
@@ -259,6 +259,8 @@ async function handleGetState() {
     model: config.activeModel || null,
     autonomy: config.settings.autonomy,
     running: !!currentRun,
+    recording: !!recording,
+    recordingSteps: recording ? recording.steps.length : 0,
     seed,
     history: conversationHistory(),
   };
@@ -335,7 +337,7 @@ async function handleRunTask(msg) {
       await detachAll().catch(() => {});
       await persistConversation(); // so the chat survives worker termination
       currentRun = null;
-      stopKeepAlive();
+      if (!recording) stopKeepAlive(); // an active recording still needs it
       emit({ kind: "idle" });
     });
 
@@ -373,6 +375,9 @@ async function startRecording() {
   chrome.tabs.onUpdated.addListener(recordingOnUpdated);
   await ensureContentScript(tabId);
   chrome.tabs.sendMessage(tabId, { type: MSG.CS_RECORD, on: true }).catch(() => {});
+  // A quiet stretch while the user reads the page would otherwise let MV3 kill
+  // the worker — taking the in-memory recording with it.
+  startKeepAlive();
   return { ok: true, startUrl };
 }
 
@@ -383,6 +388,7 @@ function stopRecording() {
     : { ok: true, steps: [], startUrl: "" };
   if (recording) chrome.tabs.sendMessage(recording.tabId, { type: MSG.CS_RECORD, on: false }).catch(() => {});
   recording = null;
+  if (!currentRun) stopKeepAlive(); // a running task still needs the keepalive
   return result;
 }
 
@@ -475,7 +481,7 @@ async function runScheduledTask(task) {
   } finally {
     await detachAll().catch(() => {});
     currentRun = null;
-    stopKeepAlive();
+    if (!recording) stopKeepAlive();
   }
   notify(task.name || "Scheduled task", summary || "Done.");
 }

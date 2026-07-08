@@ -30,6 +30,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Saved workflows no longer vanish.** The Settings page held its config
+  snapshot from page-load and wrote the *whole* object back on any change — so a
+  workflow saved (or a site permission granted, or an autonomy switch made)
+  while Settings was open in another tab got silently wiped by the next Settings
+  interaction. Settings now reloads and re-renders whenever another surface
+  writes the config.
+- **Recordings survive closing the side panel.** A finished-but-unsaved
+  recording is parked in session storage and the "Save this workflow?" card is
+  re-offered when the panel reopens; a recording still in progress keeps the
+  worker alive (previously Chrome could kill it ~30s into a quiet stretch and
+  lose the steps), and a reopened panel picks the live recording banner back up
+  with the current step count.
 - **The conversation now survives between prompts.** Chrome terminates the
   extension's idle service worker ~30s after a task finishes, which wiped the
   in-memory chat — so a follow-up like "ok do it" started from scratch with no

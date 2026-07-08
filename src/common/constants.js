@@ -10,6 +10,10 @@ export const STORAGE_KEY = "opensidekick.config.v1";
 // worker pick the chat back up (and it clears automatically when Chrome closes).
 export const SESSION_CONVO_KEY = "opensidekick.conversation.v1";
 
+// chrome.storage.session key for a finished recording that hasn't been saved or
+// discarded yet — so closing the side panel doesn't silently lose the steps.
+export const SESSION_PENDING_WF_KEY = "opensidekick.pendingWorkflow.v1";
+
 // Provider "type" determines which wire protocol we speak.
 //   "openai"    -> POST {baseUrl}/chat/completions   (OpenRouter, OpenAI, Ollama,
 //                  Groq, Together, DeepSeek, LM Studio, Google's OpenAI-compatible

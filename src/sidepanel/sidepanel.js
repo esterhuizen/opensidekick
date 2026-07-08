@@ -1,7 +1,7 @@
 // Side panel UI controller. Talks to the service worker via runtime messages
 // and renders the streaming agent transcript.
 
-import { MSG, STORAGE_KEY } from "../common/constants.js";
+import { MSG, STORAGE_KEY, SESSION_PENDING_WF_KEY } from "../common/constants.js";
 import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 
 const els = {
@@ -50,6 +50,7 @@ async function init() {
   if (state) applyState(state);
   refreshConfigured();
   refreshContextHint();
+  restorePendingWorkflow();
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === MSG.AGENT_EVENT) handleEvent(msg);
@@ -118,6 +119,15 @@ function applyState(state) {
     autoGrow();
   }
   if (state.running) setRunning(true);
+  // A recording kept running in the worker while the panel was closed — pick
+  // the banner (and step count) back up so Stop still works.
+  if (state.recording) {
+    recording = true;
+    recCount = state.recordingSteps || 0;
+    els.recordBtn.classList.add("recording");
+    els.empty.hidden = true;
+    updateRecBanner();
+  }
 }
 
 function updateConfiguredUI(isConfigured) {
@@ -600,6 +610,9 @@ function updateRecBanner() {
 }
 
 function showSaveWorkflow(steps, startUrl) {
+  // Park the steps in session storage until the user decides — otherwise
+  // closing the panel before clicking Save silently loses the recording.
+  chrome.storage.session.set({ [SESSION_PENDING_WF_KEY]: { steps, startUrl } }).catch(() => {});
   const el = document.createElement("div");
   el.className = "perm-card";
   const list = steps.map((s) => `<li>${escapeHtml(s.description || String(s))}</li>`).join("");
@@ -610,6 +623,7 @@ function showSaveWorkflow(steps, startUrl) {
     <div class="perm-buttons"><button class="primary" data-save="1">Save</button><button data-save="0">Discard</button></div>`;
   el.querySelectorAll("button").forEach((btn) =>
     btn.addEventListener("click", async () => {
+      chrome.storage.session.remove(SESSION_PENDING_WF_KEY).catch(() => {});
       if (btn.dataset.save === "1") {
         const name = (el.querySelector("#wf-name").value || "").trim() || "Untitled workflow";
         await saveWorkflow({ id: crypto.randomUUID(), name, startUrl, steps });
@@ -621,6 +635,21 @@ function showSaveWorkflow(steps, startUrl) {
   );
   els.messages.appendChild(el);
   scroll();
+}
+
+// If a recording was stopped but never saved/discarded (e.g. the panel closed),
+// re-offer it when the panel opens again.
+async function restorePendingWorkflow() {
+  try {
+    const raw = await chrome.storage.session.get(SESSION_PENDING_WF_KEY);
+    const pending = raw[SESSION_PENDING_WF_KEY];
+    if (pending && Array.isArray(pending.steps) && pending.steps.length) {
+      els.empty.hidden = true;
+      showSaveWorkflow(pending.steps, pending.startUrl || "");
+    }
+  } catch {
+    /* session storage unavailable — nothing to restore */
+  }
 }
 
 function toggleWorkflowsMenu() {

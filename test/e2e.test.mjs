@@ -15,7 +15,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { STORAGE_KEY, MSG } from "../src/common/constants.js";
+import { STORAGE_KEY, MSG, SESSION_PENDING_WF_KEY } from "../src/common/constants.js";
 
 const EXT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const IMG_PNG = fs.readFileSync(path.join(EXT_DIR, "icons/icon16.png")); // a real, tiny PNG
@@ -576,6 +576,46 @@ async function main() {
     const replayOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
     check(replayOut === "Results for: dogs", `replay: agent re-ran the recorded steps (got "${replayOut}")`);
     check(replay.events.filter((e) => e.kind === "error").length === 0, "replay: no error events");
+
+    // --- Saved workflows must survive an options-page interaction ---
+    // optPage has been open since before the workflow was written; its persist()
+    // used to write back a stale whole-config snapshot and wipe it.
+    await optPage.click('input[name="autonomy"][value="ask"]');
+    await optPage.waitForTimeout(500);
+    const wfCount = await optPage.evaluate(async (k) => {
+      const r = await chrome.storage.local.get(k);
+      return ((r[k] && r[k].workflows) || []).length;
+    }, STORAGE_KEY);
+    check(wfCount === 1, `wf-persist: workflow survives an options-page interaction (${wfCount} in storage)`);
+
+    // --- An unsaved recording survives closing the panel ---
+    await optPage.evaluate(([k, v]) => chrome.storage.session.set({ [k]: v }), [
+      SESSION_PENDING_WF_KEY,
+      { steps: [{ action: "click", description: "Click Search" }], startUrl: `${base}/page` },
+    ]);
+    const pendPanel = await context.newPage();
+    await pendPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await pendPanel.waitForTimeout(500);
+    const cardTitle = await pendPanel.$eval(".perm-card h3", (e) => e.textContent).catch(() => "");
+    check(/Save this workflow/.test(cardTitle), `wf-persist: reopened panel re-offers the unsaved recording (got "${cardTitle}")`);
+    await pendPanel.click('.perm-card button[data-save="0"]'); // Discard
+    await pendPanel.waitForTimeout(300);
+    const stashLeft = await optPage.evaluate((k) => chrome.storage.session.get(k).then((r) => !!r[k]), SESSION_PENDING_WF_KEY);
+    check(!stashLeft, "wf-persist: discarding clears the pending recording");
+    await pendPanel.close();
+
+    // --- A reopened panel picks up an in-progress recording ---
+    await testPage.bringToFront();
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.START_RECORDING);
+    await optPage.waitForTimeout(400);
+    const midPanel = await context.newPage();
+    await midPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await midPanel.waitForTimeout(500);
+    const bannerUp = await midPanel.$eval("#rec-banner", (e) => !e.hidden).catch(() => false);
+    const btnLit = await midPanel.$eval("#record-btn", (e) => e.classList.contains("recording")).catch(() => false);
+    check(bannerUp && btnLit, `wf-persist: reopened panel resumes the live recording banner (banner=${bannerUp}, btn=${btnLit})`);
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.STOP_RECORDING);
+    await midPanel.close();
 
     // --- MCP tool server: the agent uses a remote tool alongside the browser ---
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

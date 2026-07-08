@@ -1,6 +1,6 @@
 // Options page: manage providers, model selection, behavior, and site rules.
 
-import { PROVIDER_PRESETS, DEFAULT_SETTINGS, MSG } from "../common/constants.js";
+import { PROVIDER_PRESETS, DEFAULT_SETTINGS, MSG, STORAGE_KEY } from "../common/constants.js";
 import { loadConfig, saveConfig } from "../background/storage.js";
 import { listModels, testModel } from "../background/providers.js";
 import { connectServer, listTools } from "../background/mcp.js";
@@ -32,6 +32,26 @@ async function init() {
   $("#add-sched").addEventListener("click", addSched);
   $("#add-mcp").addEventListener("click", addMcp);
   wireSettings();
+  renderAll();
+
+  // This page holds `config` in memory and persist() writes the WHOLE object.
+  // Other surfaces also write the config while this page is open — the side
+  // panel saves workflows and switches autonomy, the agent grants per-site
+  // permissions. Without reloading here, the next persist() would clobber those
+  // with our stale snapshot (a saved workflow used to vanish this way). So on
+  // any external write, re-read and re-render.
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== "local" || !changes[STORAGE_KEY]) return;
+    if (selfWrites > 0) {
+      selfWrites--; // our own persist() — in-memory config is already current
+      return;
+    }
+    config = await loadConfig();
+    renderAll();
+  });
+}
+
+function renderAll() {
   renderProviders();
   renderSettings();
   renderPermissions();
@@ -510,8 +530,15 @@ async function testMcp(server, statusEl, btn) {
 // Helpers
 // -------------------------------------------------------------------------
 let toastTimer = null;
+let selfWrites = 0; // storage.onChanged events caused by our own persist()
 async function persist() {
-  await saveConfig(config);
+  selfWrites++;
+  try {
+    await saveConfig(config);
+  } catch (e) {
+    selfWrites--; // the write never happened, so no onChanged will fire for it
+    throw e;
+  }
   toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (toast.hidden = true), 1200);
