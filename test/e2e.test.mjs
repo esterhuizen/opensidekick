@@ -72,6 +72,16 @@ function decide(messages) {
   let elements = [];
   for (const p of parsed) if (Array.isArray(p.elements)) elements = p.elements;
 
+  // Context retention: only answerable if the FIRST turn is still in the
+  // conversation when the follow-up arrives (tests survival of a worker restart).
+  if (/what is the magic word/.test(firstUser) || messages.some((m) => typeof m.content === "string" && /what is the magic word/i.test(m.content))) {
+    const remembered = messages.some((m) => m.role === "user" && typeof m.content === "string" && /the magic word is plum/i.test(m.content));
+    return { kind: "text", text: remembered ? "remembered: plum" : "no-context" };
+  }
+  if (/the magic word is plum/.test(firstUser)) {
+    return { kind: "text", text: "Noted." };
+  }
+
   // Vision: take a screenshot, then confirm once the image comes back.
   if (/screenshot|see the page/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "take_screenshot", args: {} };
@@ -613,6 +623,68 @@ async function main() {
     await new Promise((r) => setTimeout(r, 300));
     recEvents = await optPage.evaluate(() => window.__events || []);
     check(recEvents.some((e) => e.kind === "idle"), "recovery: a late/orphaned permission answer emits idle");
+
+    // --- Context retention across service-worker restarts ---
+    // MV3 kills the idle worker between prompts; the conversation must survive.
+    const runTask = async (task, newChat) => {
+      await optPage.evaluate(() => (window.__events = []));
+      await testPage.bringToFront();
+      await optPage.evaluate(([rt, t, nc]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: nc }), [MSG.RUN_TASK, task, newChat]);
+      for (let i = 0; i < 120; i++) {
+        const evs = await optPage.evaluate(() => window.__events || []);
+        if (evs.some((e) => e.kind === "idle")) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return optPage.evaluate(() => window.__events || []);
+    };
+
+    await runTask("The magic word is plum. Acknowledge.", true);
+    const persisted = await optPage.evaluate(async () => {
+      const raw = await chrome.storage.session.get("opensidekick.conversation.v1");
+      return raw["opensidekick.conversation.v1"] || null;
+    });
+    check(Array.isArray(persisted) && persisted.length >= 2, `context: conversation persisted to storage.session (${persisted ? persisted.length : 0} msgs)`);
+
+    // Kill the service worker like Chrome does between prompts (close its CDP
+    // target), and mark the old worker so we can PROVE the next one is fresh.
+    let swStopped = false;
+    try {
+      const oldSw = context.serviceWorkers().find((w) => w.url().includes(extId));
+      if (oldSw) await oldSw.evaluate(() => (globalThis.__testGen = "old"));
+      const cdp = await context.browser().newBrowserCDPSession();
+      const { targetInfos } = await cdp.send("Target.getTargets");
+      const swTarget = targetInfos.find((t) => t.type === "service_worker" && t.url.includes(extId));
+      if (swTarget) {
+        await cdp.send("Target.closeTarget", { targetId: swTarget.targetId });
+        swStopped = true;
+        await new Promise((r) => setTimeout(r, 700));
+      }
+    } catch (e) {
+      console.log("note: could not stop service worker via CDP:", e.message);
+    }
+    check(swStopped, "context: service worker was stopped (simulating MV3 idle termination)");
+
+    const follow = await runTask("What is the magic word?", false);
+    check(/remembered: plum/.test(answerOf(follow)), `context: follow-up prompt still sees the earlier turn after worker restart (got "${answerOf(follow)}")`);
+
+    // Confirm the worker that answered was a FRESH one (marker gone).
+    const freshSw = context.serviceWorkers().find((w) => w.url().includes(extId));
+    const gen = freshSw ? await freshSw.evaluate(() => globalThis.__testGen || "fresh").catch(() => "fresh") : "fresh";
+    check(gen === "fresh", `context: the answering worker was a restarted one (marker: ${gen})`);
+
+    // A reopened side panel re-renders the restored chat.
+    const histPanel = await context.newPage();
+    await histPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await histPanel.waitForTimeout(500);
+    const userBubbles = await histPanel.$$eval(".msg.user", (els) => els.map((e) => e.textContent)).catch(() => []);
+    check(userBubbles.some((t) => /magic word/i.test(t)), `context: reopened panel re-renders the chat history (${userBubbles.length} user bubbles)`);
+    await histPanel.close();
+
+    // "+ New chat" clears the persisted conversation immediately.
+    await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.NEW_CHAT);
+    await new Promise((r) => setTimeout(r, 300));
+    const cleared = await runTask("What is the magic word?", false);
+    check(/no-context/.test(answerOf(cleared)), `context: NEW_CHAT clears the stored conversation (got "${answerOf(cleared)}")`);
 
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.

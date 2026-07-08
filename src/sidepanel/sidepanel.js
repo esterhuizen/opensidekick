@@ -94,6 +94,21 @@ async function init() {
 
 function applyState(state) {
   updateConfiguredUI(!!state.configured);
+  // Re-render the ongoing chat when the panel (re)opens — the conversation
+  // lives in the worker (persisted across its restarts), like Claude's panel.
+  if (state.history && state.history.length && !els.messages.querySelector(".msg")) {
+    els.empty.hidden = true;
+    for (const m of state.history) {
+      if (m.role === "user") addUserMessage(m.text);
+      else {
+        const el = document.createElement("div");
+        el.className = "msg assistant";
+        el.innerHTML = renderMarkdown(m.text);
+        els.messages.appendChild(el);
+      }
+    }
+    scroll();
+  }
   if (state.seed) {
     els.input.value = state.seed;
     autoGrow();
@@ -188,6 +203,7 @@ function onSubmit(e) {
 
 function newChat() {
   if (running) send({ type: MSG.STOP_TASK });
+  send({ type: MSG.NEW_CHAT }); // clear the worker's (persisted) conversation now
   els.messages.querySelectorAll(".msg, .tool-event, .perm-card, .thinking").forEach((n) => n.remove());
   els.empty.hidden = false;
   newChatPending = true;

@@ -5,6 +5,11 @@
 
 export const STORAGE_KEY = "opensidekick.config.v1";
 
+// chrome.storage.session key for the current chat's conversation. MV3 can
+// terminate the idle service worker at any time; persisting here lets the next
+// worker pick the chat back up (and it clears automatically when Chrome closes).
+export const SESSION_CONVO_KEY = "opensidekick.conversation.v1";
+
 // Provider "type" determines which wire protocol we speak.
 //   "openai"    -> POST {baseUrl}/chat/completions   (OpenRouter, OpenAI, Ollama,
 //                  Groq, Together, DeepSeek, LM Studio, Google's OpenAI-compatible
@@ -148,6 +153,7 @@ export const MSG = {
   // side panel -> worker
   RUN_TASK: "run_task",
   STOP_TASK: "stop_task",
+  NEW_CHAT: "new_chat",
   PERMISSION_RESPONSE: "permission_response",
   PLAN_RESPONSE: "plan_response",
   RUN_SCHEDULED: "run_scheduled",

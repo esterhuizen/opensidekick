@@ -2,7 +2,7 @@
 // Owns conversation state, routes messages between the side panel and the agent
 // loop, and mediates permission prompts.
 
-import { MSG, STORAGE_KEY } from "../common/constants.js";
+import { MSG, STORAGE_KEY, SESSION_CONVO_KEY } from "../common/constants.js";
 import { loadConfig, getActiveProvider, setSitePermission } from "./storage.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
@@ -13,6 +13,7 @@ import { applyMigrations } from "./migrations.js";
 // State
 // -------------------------------------------------------------------------
 let conversation = []; // normalized message history for the current chat
+let conversationLoaded = false; // restored from storage.session once per worker life
 let currentRun = null; // { controller: AbortController }
 const pendingPermissions = new Map(); // id -> resolve fn
 const pendingPlans = new Map(); // id -> resolve fn
@@ -37,6 +38,57 @@ function stopKeepAlive() {
   if (keepAliveTimer != null) {
     clearInterval(keepAliveTimer);
     keepAliveTimer = null;
+  }
+}
+
+// -------------------------------------------------------------------------
+// Conversation persistence — MV3 kills the idle worker BETWEEN user prompts
+// (the keepalive only runs during a task), which used to wipe the in-memory
+// conversation: the next prompt started from scratch. Persist the chat to
+// chrome.storage.session (survives worker restarts, clears when Chrome closes)
+// and restore it lazily on the next worker.
+// -------------------------------------------------------------------------
+async function ensureConversationLoaded() {
+  if (conversationLoaded) return;
+  conversationLoaded = true;
+  if (conversation.length) return; // this worker already has a live chat
+  try {
+    const raw = await chrome.storage.session.get(SESSION_CONVO_KEY);
+    const stored = raw[SESSION_CONVO_KEY];
+    if (Array.isArray(stored) && stored.length) conversation = stored;
+  } catch {
+    /* session storage unavailable — continue with an empty chat */
+  }
+}
+
+async function persistConversation() {
+  // Screenshots are large and only matter within the turn they were taken in —
+  // strip them so the chat stays comfortably inside the session-storage quota.
+  const strip = (msgs) =>
+    msgs.map((m) =>
+      m.images && m.images.length
+        ? { ...m, images: undefined, content: m.content || "(a screenshot was attached here; it is not retained across sessions)" }
+        : m,
+    );
+  try {
+    await chrome.storage.session.set({ [SESSION_CONVO_KEY]: strip(conversation) });
+  } catch {
+    // Likely over quota (very long chat) — keep only the recent tail.
+    try {
+      await chrome.storage.session.set({ [SESSION_CONVO_KEY]: strip(conversation.slice(-20)) });
+    } catch {
+      /* give up quietly; worst case the next worker starts fresh */
+    }
+  }
+}
+
+async function clearConversation() {
+  conversation = [];
+  conversationLoaded = true;
+  try {
+    await chrome.storage.session.remove(SESSION_CONVO_KEY);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -131,6 +183,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       handleRunTask(msg).then(sendResponse);
       return true;
     }
+    case MSG.NEW_CHAT: {
+      clearConversation().then(() => sendResponse({ ok: true }));
+      return true;
+    }
     case MSG.STOP_TASK: {
       if (currentRun) currentRun.controller.abort();
       // Also cancel any pending permission or plan prompt.
@@ -193,6 +249,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 async function handleGetState() {
   const { config, provider } = await getActiveProvider();
+  await ensureConversationLoaded();
   const seed = pendingSeed;
   pendingSeed = null;
   return {
@@ -203,7 +260,27 @@ async function handleGetState() {
     autonomy: config.settings.autonomy,
     running: !!currentRun,
     seed,
+    history: conversationHistory(),
   };
+}
+
+// A compact, renderable projection of the conversation for the side panel —
+// user prompts and visible assistant text (incl. a finish tool's summary).
+function conversationHistory() {
+  const out = [];
+  for (const m of conversation) {
+    if (m.role === "user" && typeof m.content === "string" && m.content && !m.images && !m.internal) {
+      out.push({ role: "user", text: m.content });
+    } else if (m.role === "assistant") {
+      let text = (m.content || "").trim();
+      if (!text && m.toolCalls) {
+        const fin = m.toolCalls.find((t) => t.name === "finish" && t.args && t.args.summary);
+        if (fin) text = String(fin.args.summary);
+      }
+      if (text) out.push({ role: "assistant", text });
+    }
+  }
+  return out;
 }
 
 async function handleRunTask(msg) {
@@ -221,7 +298,8 @@ async function handleRunTask(msg) {
     return { ok: false, error: "no-model" };
   }
 
-  if (msg.newChat) conversation = [];
+  if (msg.newChat) await clearConversation();
+  else await ensureConversationLoaded();
   conversation.push({ role: "user", content: msg.task });
   emit({ kind: "user_echo", text: msg.task });
 
@@ -255,6 +333,7 @@ async function handleRunTask(msg) {
     .finally(async () => {
       // Detach the debugger (removes the "debugging this browser" banner).
       await detachAll().catch(() => {});
+      await persistConversation(); // so the chat survives worker termination
       currentRun = null;
       stopKeepAlive();
       emit({ kind: "idle" });

@@ -338,6 +338,7 @@ export async function runAgent(deps) {
         role: "user",
         content: "Here " + (pendingImages.length > 1 ? "are the screenshots" : "is the screenshot") + " you requested:",
         images: pendingImages,
+        internal: true, // tool plumbing, not something the user typed — hide from transcripts
       });
       sentImage = true;
       emit({ kind: "tool_end", name: "take_screenshot", ok: true, summary: "attached image to the conversation" });

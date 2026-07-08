@@ -30,6 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The conversation now survives between prompts.** Chrome terminates the
+  extension's idle service worker ~30s after a task finishes, which wiped the
+  in-memory chat — so a follow-up like "ok do it" started from scratch with no
+  context. The conversation is now persisted to `chrome.storage.session`
+  (survives worker restarts, clears when Chrome closes) and restored on the next
+  prompt. Reopening the side panel also re-renders the ongoing chat, and
+  "+ New chat" clears the stored conversation immediately. Screenshots are
+  stripped from the persisted copy to stay inside the session-storage quota.
 - **The "Recording…" banner no longer gets stuck after Stop.** Starting a
   recording could take a moment (while the content script is injected) with no
   visual feedback, so a quick second click spawned a second start whose late
