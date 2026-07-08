@@ -8,7 +8,17 @@ across tabs — using _any_ model you choose.** OpenRouter, OpenAI, Claude, Gemi
 Groq, or a fully local model in Ollama / LM Studio. Your keys stay in your
 browser. **MIT licensed. No account, no telemetry, no middleman.**
 
-<p align="center"><a href="https://opensidekick.app"><strong>🌐 opensidekick.app</strong></a></p>
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/idffinkmnnajgpjjonpmmaikjbpjmngk"><img src="https://img.shields.io/chrome-web-store/v/idffinkmnnajgpjjonpmmaikjbpjmngk?label=Chrome%20Web%20Store&color=4f46e5" alt="Chrome Web Store" /></a>
+  <a href="https://chromewebstore.google.com/detail/idffinkmnnajgpjjonpmmaikjbpjmngk"><img src="https://img.shields.io/chrome-web-store/users/idffinkmnnajgpjjonpmmaikjbpjmngk?label=users&color=4f46e5" alt="Chrome Web Store users" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
+</p>
+
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/idffinkmnnajgpjjonpmmaikjbpjmngk"><strong>🧩 Install from the Chrome Web Store</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://opensidekick.app"><strong>🌐 opensidekick.app</strong></a>
+</p>
 
 <p align="center">
   <img src="assets/demo.gif" alt="OpenSidekick reading a page and filling a newsletter field on the user's behalf, then stopping before it submits" width="460" />
@@ -87,7 +97,13 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Local-first & private**: keys and settings live in `chrome.storage.local`;
   requests go straight to your chosen provider.
 
-## Install (from source, unpacked)
+## Install
+
+**Easiest — [Chrome Web Store](https://chromewebstore.google.com/detail/idffinkmnnajgpjjonpmmaikjbpjmngk):**
+click *Add to Chrome*, then pin OpenSidekick and press **Ctrl+E** / **Cmd+E** to
+open the side panel.
+
+### From source (unpacked)
 
 1. Clone or download this repository.
 2. Open `chrome://extensions` in Chrome (or Edge / Brave — any Chromium 116+).
