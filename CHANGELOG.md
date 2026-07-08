@@ -38,6 +38,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   prompt. Reopening the side panel also re-renders the ongoing chat, and
   "+ New chat" clears the stored conversation immediately. Screenshots are
   stripped from the persisted copy to stay inside the session-storage quota.
+  Also fixed the panel's first message after reopening silently starting a new
+  chat (it sent `newChat: true`), which wiped the restored conversation — the
+  panel now continues the chat; only the "+" button starts a fresh one.
 - **The "Recording…" banner no longer gets stuck after Stop.** Starting a
   recording could take a moment (while the content script is injected) with no
   visual feedback, so a quick second click spawned a second start whose late

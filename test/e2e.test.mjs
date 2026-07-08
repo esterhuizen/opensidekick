@@ -686,6 +686,46 @@ async function main() {
     const cleared = await runTask("What is the magic word?", false);
     check(/no-context/.test(answerOf(cleared)), `context: NEW_CHAT clears the stored conversation (got "${answerOf(cleared)}")`);
 
+    // --- Context survives closing & reopening the PANEL, driven through the real
+    // composer (the first submit after reopen used to send newChat:true and wipe
+    // the restored conversation). ---
+    const panelIdle = async (pg, prevAnswers) => {
+      for (let i = 0; i < 120; i++) {
+        const idle = await pg.$eval("#send-btn", (el) => !el.hidden).catch(() => false);
+        const answers = await pg.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+        if (idle && answers > prevAnswers) return answers;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return -1;
+    };
+    const panelSend = async (pg, text, prevAnswers) => {
+      await pg.fill("#input", text);
+      await testPage.bringToFront(); // the agent targets the active content tab
+      await pg.click("#send-btn");
+      return panelIdle(pg, prevAnswers);
+    };
+
+    const panel1 = await context.newPage();
+    await panel1.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await panel1.waitForTimeout(400);
+    await panel1.click("#new-chat"); // clean slate
+    await panel1.waitForTimeout(300);
+    const a1 = await panelSend(panel1, "The magic word is plum. Acknowledge.", 0);
+    check(a1 > 0, "panel-context: first turn completed through the composer");
+    await panel1.close(); // user closes the side panel
+
+    const panel2 = await context.newPage();
+    await panel2.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await panel2.waitForTimeout(500);
+    const restoredBubbles = await panel2.$$eval(".msg", (els) => els.length).catch(() => 0);
+    check(restoredBubbles >= 2, `panel-context: reopened panel shows the prior chat (${restoredBubbles} bubbles)`);
+    const restoredCount = await panel2.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+    const a2 = await panelSend(panel2, "What is the magic word?", restoredCount);
+    check(a2 > 0, "panel-context: follow-up turn completed");
+    const lastAnswer = await panel2.$$eval(".msg.assistant", (els) => els[els.length - 1].textContent).catch(() => "");
+    check(/remembered: plum/.test(lastAnswer), `panel-context: composer follow-up after reopen keeps the context (got "${lastAnswer.slice(0, 40)}")`);
+    await panel2.close();
+
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

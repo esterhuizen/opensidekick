@@ -35,7 +35,11 @@ let recGen = 0; // bumped on every start/stop so a slow START_RECORDING reply ca
 let configured = false;
 
 let running = false;
-let newChatPending = true; // first send starts a fresh conversation
+// Whether the next send should start a fresh conversation. Starts FALSE so that
+// reopening the panel continues the persisted chat (the worker restores it);
+// only the "+ New chat" button arms this. (It used to start true, which made the
+// first message after reopening silently wipe the restored conversation.)
+let newChatPending = false;
 let current = null; // { el, raw } assistant bubble being streamed
 let pendingTools = []; // tool-event elements awaiting completion
 
