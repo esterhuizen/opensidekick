@@ -25,3 +25,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Feature-video recording intermediates — only assets/feature-tour.mp4 is tracked
+assets/video-raw/
