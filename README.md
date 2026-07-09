@@ -24,7 +24,7 @@ browser. **MIT licensed. No account, no telemetry, no middleman.**
   <img src="assets/demo.gif" alt="OpenSidekick reading a page and filling a newsletter field on the user's behalf, then stopping before it submits" width="460" />
 </p>
 
-<p align="center"><sub>The agent reads the page, fills the field, and stops before submitting — driven by whichever model you configured.<br/>More: <a href="assets/screenshots/02-providers.png">bring your own model</a> · <a href="assets/screenshots/03-summarize.png">summarize &amp; extract</a></sub></p>
+<p align="center"><sub>The agent reads the page, fills the field, and stops before submitting — driven by whichever model you configured.<br/>▶ <a href="https://opensidekick.app/feature-tour.mp4"><strong>Watch the 50-second feature tour</strong></a> — approval flow, vision, multi-tab, workflow recording.<br/>More: <a href="assets/screenshots/02-providers.png">bring your own model</a> · <a href="assets/screenshots/03-summarize.png">summarize &amp; extract</a></sub></p>
 
 ## How it compares
 
