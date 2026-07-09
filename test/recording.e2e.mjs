@@ -55,7 +55,7 @@ try {
 
   const panel = await ctx.newPage();
   await panel.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
-  const bannerVisible = () => panel.$eval("#rec-banner", (e) => !e.hidden).catch(() => false);
+  const bannerVisible = () => panel.$eval("#rec-banner", (e) => getComputedStyle(e).display !== "none").catch(() => false);
   const recBtnOn = () => panel.$eval("#record-btn", (e) => e.classList.contains("recording")).catch(() => false);
 
   // 1) Normal: record -> banner shows -> stop -> banner hidden.

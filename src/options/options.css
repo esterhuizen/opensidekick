@@ -395,3 +395,8 @@ textarea.s-prompt {
 .wf-steps li {
   margin: 3px 0;
 }
+
+/* Same guard as the side panel: hidden must beat component display rules. */
+[hidden] {
+  display: none !important;
+}

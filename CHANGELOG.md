@@ -30,6 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Stale "Working…" / "Recording…" bars never cleared visually.** The status
+  bar and recording banner have `display:flex` in CSS, which overrides the HTML
+  `hidden` attribute — so hiding them set the property but they stayed on
+  screen (the "Working…" strip lingered after every task, and the recording
+  banner survived Stop). A global `[hidden] { display:none !important }` guard
+  fixes the whole class of bug; the e2e now asserts computed visibility instead
+  of the property.
+
 - **Saved workflows no longer vanish.** The Settings page held its config
   snapshot from page-load and wrote the *whole* object back on any change — so a
   workflow saved (or a site permission granted, or an autonomy switch made)

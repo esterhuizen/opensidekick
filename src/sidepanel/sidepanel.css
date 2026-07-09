@@ -569,3 +569,10 @@ body {
 a {
   color: var(--accent);
 }
+
+/* The hidden attribute must beat any component display rule (e.g. the
+   status bar and recording banner are display:flex, which otherwise overrides
+   the UA's [hidden] { display:none }). */
+[hidden] {
+  display: none !important;
+}

@@ -611,7 +611,7 @@ async function main() {
     const midPanel = await context.newPage();
     await midPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
     await midPanel.waitForTimeout(500);
-    const bannerUp = await midPanel.$eval("#rec-banner", (e) => !e.hidden).catch(() => false);
+    const bannerUp = await midPanel.$eval("#rec-banner", (e) => getComputedStyle(e).display !== "none").catch(() => false);
     const btnLit = await midPanel.$eval("#record-btn", (e) => e.classList.contains("recording")).catch(() => false);
     check(bannerUp && btnLit, `wf-persist: reopened panel resumes the live recording banner (banner=${bannerUp}, btn=${btnLit})`);
     await optPage.evaluate((t) => chrome.runtime.sendMessage({ type: t }), MSG.STOP_RECORDING);
