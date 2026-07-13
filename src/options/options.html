@@ -127,6 +127,13 @@
       <section class="card">
         <h2>3. Site permissions</h2>
         <p class="hint">Sites you've allowed or blocked the agent to act on.</p>
+        <div class="radio-row" style="margin-bottom:12px">
+          <label class="radio"><input type="radio" name="siteAccess" value="all" /> Work on any site <span class="tag">default</span></label>
+          <label class="radio"><input type="radio" name="siteAccess" value="allowlist" /> Only work on sites I allow <span class="tag">locked down</span></label>
+        </div>
+        <p class="hint">In "only allowed sites" mode the agent won't read or act on a site that isn't
+          on the list below — it asks first (even in Auto mode). Allow a site from the prompt, from
+          the site chip under the chat box, or here.</p>
         <div id="perm-list" class="perm-list"></div>
         <p id="no-perms" class="empty-note">No site rules yet.</p>
       </section>

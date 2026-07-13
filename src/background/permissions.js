@@ -25,6 +25,18 @@ export const MUTATING_TOOLS = new Set([
   "run_javascript",
 ]);
 
+// Tools that read page content without modifying it. In the default "all sites"
+// mode these are always permitted on the page the user is viewing; in
+// "allowlist" site-access mode they are gated like actions, so the agent
+// doesn't even read a site the user hasn't trusted.
+export const PAGE_READ_TOOLS = new Set([
+  "read_page",
+  "get_page_text",
+  "take_screenshot",
+  "read_console",
+  "read_network",
+]);
+
 export function originOf(url) {
   try {
     return new URL(url).origin;
@@ -53,7 +65,13 @@ export function isSensitive(url) {
  * `sessionGrants` is a Set of origins the user allowed "once" during this task.
  */
 export function evaluate(toolName, url, config, sessionGrants) {
-  if (!MUTATING_TOOLS.has(toolName)) return { decision: "allow" };
+  const allowlistMode = config.settings.siteAccess === "allowlist";
+  const isMutating = MUTATING_TOOLS.has(toolName);
+  const isPageRead = PAGE_READ_TOOLS.has(toolName);
+
+  // Non-page tools (list_tabs, wait, finish, …) are never gated. Page reads are
+  // free in "all sites" mode; in allowlist mode they're gated like actions.
+  if (!isMutating && !(allowlistMode && isPageRead)) return { decision: "allow" };
 
   const origin = originOf(url);
   if (!origin) return { decision: "block", reason: "Page has no permissible origin." };
@@ -64,13 +82,20 @@ export function evaluate(toolName, url, config, sessionGrants) {
   }
 
   const sensitive = isSensitive(url);
-  if (sensitive) {
+  if (sensitive && isMutating) {
     // Sensitive sites always prompt per action and are never auto/always allowed.
     return { decision: "prompt", sensitive: true };
   }
 
   if (stored === "allow" || sessionGrants.has(origin)) {
     return { decision: "allow" };
+  }
+
+  if (allowlistMode) {
+    // Only-allowed-sites mode: a site not on the allowlist always prompts —
+    // even in auto mode, and even for reads. The prompt is the quick "trust
+    // this site" toggle.
+    return { decision: "prompt", sensitive: false, newSite: true };
   }
 
   if (config.settings.autonomy === "auto") {

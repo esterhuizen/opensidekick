@@ -73,7 +73,11 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Safety layer** — three autonomy modes: **plan-first** (the agent proposes a
   plan and the sites it will use, and waits for your approval before acting),
   **ask before acting**, or **auto** — switchable in one click from the
-  **Approval** selector right under the chat box (no trip to Settings). Plus a
+  **Approval** selector right under the chat box (no trip to Settings).
+  An **only-allowed-sites mode** locks the agent down to domains you trust: on
+  any other site it won't even read the page without asking first (even in
+  auto), and the **site chip** under the chat box shows the current site's rule
+  with a two-click trust/block toggle. Plus a
   visible on-page activity indicator
   with a Stop button so you always see when it's acting; a re-check that **blocks
   an action if the page changed origin** since it was last read (defends against

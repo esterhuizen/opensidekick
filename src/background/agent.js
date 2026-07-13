@@ -4,7 +4,7 @@
 
 import { callModel } from "./providers.js";
 import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
-import { evaluate, MUTATING_TOOLS, originOf } from "./permissions.js";
+import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, originOf } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
@@ -214,8 +214,11 @@ export async function runAgent(deps) {
         continue;
       }
 
-      // Permission gate for mutating actions.
-      if (MUTATING_TOOLS.has(call.name)) {
+      // Permission gate for mutating actions — and, in allowlist site-access
+      // mode, for page reads too (the agent shouldn't even read an untrusted
+      // site; the resulting prompt doubles as the "trust this site" toggle).
+      const gateReads = config.settings.siteAccess === "allowlist" && PAGE_READ_TOOLS.has(call.name);
+      if (MUTATING_TOOLS.has(call.name) || gateReads) {
         let url = "";
         try {
           url = (await chrome.tabs.get(focusedTabId)).url || "";
@@ -226,7 +229,7 @@ export async function runAgent(deps) {
 
         // (A) Domain re-check: refuse to act if the page changed origin since it
         // was last read (defends against redirects / injected navigation).
-        if (observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
+        if (!gateReads && observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
           pushToolResult(conversation, call, {
             ok: false,
             error: `The page changed to ${currentOrigin} since you last read it (was ${observedOrigin}). Call read_page again before acting on this page.`,
@@ -239,7 +242,7 @@ export async function runAgent(deps) {
         // (D) High-consequence actions (buy / pay / delete / …) always confirm,
         // regardless of site or autonomy mode.
         let forceSensitive = false;
-        if (call.name === "click_element" || call.name === "double_click") {
+        if (!gateReads && (call.name === "click_element" || call.name === "double_click")) {
           if (isSensitiveActionText(lastElements.get(call.args?.ref))) forceSensitive = true;
         }
 
@@ -265,6 +268,7 @@ export async function runAgent(deps) {
             toolName: call.name,
             args: call.args,
             sensitive: !!verdict.sensitive,
+            newSite: !!verdict.newSite,
           });
           if (choice === "decline") {
             pushToolResult(conversation, call, {

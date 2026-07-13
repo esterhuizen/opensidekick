@@ -766,6 +766,61 @@ async function main() {
     check(/remembered: plum/.test(lastAnswer), `panel-context: composer follow-up after reopen keeps the context (got "${lastAnswer.slice(0, 40)}")`);
     await panel2.close();
 
+    // --- Only-allowed-sites (allowlist) mode ---
+    // (1) Unlisted site + AUTO mode: even the first read must prompt.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, sitePermissions: {}, settings: { ...config.settings, autonomy: "auto", siteAccess: "allowlist" } },
+    ]);
+    const al1 = await drive("Search for cats on this page.");
+    check(al1.perms.length > 0 && al1.perms[0].toolName === "read_page",
+      `allowlist: unlisted site prompts before the first read, even in auto (prompts: ${al1.perms.map((p) => p.toolName).join(",")})`);
+    check(al1.events.filter((e) => e.kind === "error").length === 0, "allowlist: task completes after the user allows once");
+
+    // (2) Allowed site: no prompts at all.
+    await optPage.evaluate(([key, cfg, origin]) => {
+      cfg.sitePermissions = { [origin]: "allow" };
+      return chrome.storage.local.set({ [key]: cfg });
+    }, [STORAGE_KEY, { ...config, settings: { ...config.settings, autonomy: "auto", siteAccess: "allowlist" } }, new URL(base).origin]);
+    const al2 = await drive("Search for cats on this page.");
+    check(al2.perms.length === 0, `allowlist: trusted site runs with zero prompts (got ${al2.perms.length})`);
+
+    // (3) Blocked site: tools are refused outright.
+    await optPage.evaluate(([key, cfg, origin]) => {
+      cfg.sitePermissions = { [origin]: "block" };
+      return chrome.storage.local.set({ [key]: cfg });
+    }, [STORAGE_KEY, { ...config, settings: { ...config.settings, autonomy: "auto", siteAccess: "allowlist" } }, new URL(base).origin]);
+    const al3 = await drive("Search for cats on this page.");
+    check(al3.perms.length === 0 && al3.events.some((e) => e.kind === "tool_end" && /blocked OpenSidekick/i.test(e.summary || "")),
+      "allowlist: a blocked site refuses tools without prompting");
+
+    // (4) The panel's site chip shows the state and trusts a site in two clicks.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+      STORAGE_KEY,
+      { ...config, sitePermissions: {}, settings: { ...config.settings, siteAccess: "allowlist" } },
+    ]);
+    const chipPanel = await context.newPage();
+    await chipPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await testPage.bringToFront(); // onActivated → chip refresh for the real page
+    await chipPanel.waitForTimeout(700);
+    const chipText = await chipPanel.$eval("#context-hint", (e) => e.textContent).catch(() => "");
+    check(/not allowed yet/.test(chipText), `site-chip: unlisted site shows 'not allowed yet' in allowlist mode (got "${chipText}")`);
+    await chipPanel.click("#context-hint");
+    await chipPanel.waitForSelector('#site-menu button[data-rule="allow"]', { timeout: 5000 });
+    await chipPanel.click('#site-menu button[data-rule="allow"]');
+    await chipPanel.waitForTimeout(500);
+    const ruleNow = await chipPanel.evaluate(async ([key, origin]) => {
+      const raw = await chrome.storage.local.get(key);
+      return ((raw[key] || {}).sitePermissions || {})[origin] || null;
+    }, [STORAGE_KEY, new URL(base).origin]);
+    check(ruleNow === "allow", `site-chip: 'Trust' persists an allow rule (got ${ruleNow})`);
+    const chipText2 = await chipPanel.$eval("#context-hint", (e) => e.textContent).catch(() => "");
+    check(/allowed/.test(chipText2) && !/not allowed yet/.test(chipText2), `site-chip: chip reflects the new rule (got "${chipText2}")`);
+    await chipPanel.close();
+
+    // Restore the standard config for the remaining tests.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);
+
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

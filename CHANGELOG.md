@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Only-allowed-sites mode + a site trust chip** (user-requested). A new site
+  access setting (Settings → Site permissions) locks the agent down to domains
+  you trust: on any unlisted site it won't even *read* the page without asking
+  first — even in Auto mode — and the prompt doubles as the "trust this site"
+  toggle. The site chip under the chat box shows the current site's rule
+  (✓ allowed / ⛔ blocked / not allowed yet) and opens a two-click
+  trust / block / clear menu, no trip to Settings. Blocked sites refuse tools
+  outright; sensitive sites (banking, payments) still confirm per action even
+  when trusted; unattended scheduled runs decline prompts, so they simply won't
+  touch untrusted sites in this mode.
+
 - **"Test" button for a model (Settings → Providers).** Runs three tiny live
   requests against the selected model and reports what actually happened —
   ✓/⚠/✗ for **text**, **tool calling**, and **vision** — plus a plain-language

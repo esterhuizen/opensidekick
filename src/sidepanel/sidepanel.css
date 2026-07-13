@@ -533,6 +533,71 @@ body {
   white-space: nowrap;
   max-width: 55%;
 }
+.site-chip {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: left;
+}
+.site-chip:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.site-chip .site-state {
+  font-weight: 600;
+}
+.site-chip .site-state.ok { color: #16a34a; }
+.site-chip .site-state.blocked { color: var(--danger); }
+.site-chip .site-state.warn { color: var(--warn); }
+
+.site-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  margin-bottom: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.14);
+  min-width: 230px;
+  z-index: 25;
+  padding: 4px;
+}
+.site-menu .sm-head {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 9px 4px;
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+}
+.site-menu button:hover {
+  background: var(--accent-soft);
+}
+.site-menu button.current {
+  font-weight: 600;
+  color: var(--accent);
+}
 .composer-buttons {
   display: flex;
   gap: 6px;

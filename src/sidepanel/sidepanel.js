@@ -23,6 +23,7 @@ const els = {
   recBanner: document.getElementById("rec-banner"),
   wfMenu: document.getElementById("wf-menu"),
   autonomy: document.getElementById("autonomy"),
+  siteMenu: document.getElementById("site-menu"),
 };
 
 let savedPrompts = [];
@@ -74,8 +75,20 @@ async function init() {
     if (area === "local" && changes[STORAGE_KEY]) {
       loadPrompts();
       refreshConfigured();
+      refreshContextHint(); // site rules may have changed
     }
   });
+
+  // Keep the site chip current as the user moves between tabs/pages.
+  els.contextHint.addEventListener("click", toggleSiteMenu);
+  try {
+    chrome.tabs.onActivated.addListener(() => refreshContextHint());
+    chrome.tabs.onUpdated.addListener((tabId, info) => {
+      if (info.url || info.status === "complete") refreshContextHint();
+    });
+  } catch {
+    /* tabs events unavailable — chip still refreshes on open/submit */
+  }
 
   els.composer.addEventListener("submit", onSubmit);
   els.input.addEventListener("keydown", onInputKeydown);
@@ -180,16 +193,91 @@ async function setAutonomy(mode) {
   }
 }
 
+// -------------------------------------------------------------------------
+// Site chip — shows the current site + its rule, and is the quick toggle for
+// trusting/blocking a site without opening Settings.
+// -------------------------------------------------------------------------
+let currentSiteOrigin = null;
+
 async function refreshContextHint() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (tab && tab.url && /^https?:/i.test(tab.url)) {
-      els.contextHint.textContent = "On: " + new URL(tab.url).hostname;
-    } else {
+    if (!(tab && tab.url && /^https?:/i.test(tab.url))) {
+      currentSiteOrigin = null;
       els.contextHint.textContent = "";
+      hideSiteMenu();
+      return;
     }
+    const url = new URL(tab.url);
+    currentSiteOrigin = url.origin;
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    const cfg = raw[STORAGE_KEY] || {};
+    const rule = (cfg.sitePermissions || {})[url.origin];
+    const allowlist = cfg.settings && cfg.settings.siteAccess === "allowlist";
+    let state = "";
+    if (rule === "allow") state = '<span class="site-state ok">✓ allowed</span>';
+    else if (rule === "block") state = '<span class="site-state blocked">⛔ blocked</span>';
+    else if (allowlist) state = '<span class="site-state warn">not allowed yet</span>';
+    els.contextHint.innerHTML = `On: ${escapeHtml(url.hostname)}${state ? " · " + state : ""}`;
   } catch {
     /* ignore */
+  }
+}
+
+function toggleSiteMenu() {
+  if (!els.siteMenu.hidden) return hideSiteMenu();
+  if (!currentSiteOrigin) return;
+  renderSiteMenu();
+  document.addEventListener("mousedown", siteMenuOutside, true);
+}
+
+function siteMenuOutside(e) {
+  if (els.siteMenu.contains(e.target) || e.target === els.contextHint) return;
+  hideSiteMenu();
+}
+
+function hideSiteMenu() {
+  els.siteMenu.hidden = true;
+  els.siteMenu.innerHTML = "";
+  document.removeEventListener("mousedown", siteMenuOutside, true);
+}
+
+async function renderSiteMenu() {
+  const raw = await chrome.storage.local.get(STORAGE_KEY);
+  const cfg = raw[STORAGE_KEY] || {};
+  const rule = (cfg.sitePermissions || {})[currentSiteOrigin] || null;
+  const item = (value, label, icon) => {
+    const current = value === "clear" ? rule === null : rule === value;
+    return `<button data-rule="${value}" class="${current ? "current" : ""}">${icon} ${label}${current ? " — current" : ""}</button>`;
+  };
+  els.siteMenu.innerHTML = `
+    <div class="sm-head">${escapeHtml(currentSiteOrigin)}</div>
+    ${item("allow", "Trust — always allow", "✓")}
+    ${item("block", "Block this site", "⛔")}
+    ${item("clear", "Clear rule (default)", "○")}`;
+  els.siteMenu.querySelectorAll("button").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await setSiteRule(currentSiteOrigin, btn.dataset.rule);
+      hideSiteMenu();
+      refreshContextHint();
+    }),
+  );
+  els.siteMenu.hidden = false;
+}
+
+// Persist a per-site rule without touching the rest of the config (mirrors the
+// worker's setSitePermission; the storage listener keeps other views in sync).
+async function setSiteRule(origin, rule) {
+  try {
+    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    const cfg = raw[STORAGE_KEY] || {};
+    cfg.sitePermissions = { ...(cfg.sitePermissions || {}) };
+    if (rule === "clear") delete cfg.sitePermissions[origin];
+    else cfg.sitePermissions[origin] = rule;
+    await chrome.storage.local.set({ [STORAGE_KEY]: cfg });
+    addNote(rule === "allow" ? `✓ Trusted ${origin}` : rule === "block" ? `⛔ Blocked ${origin}` : `Cleared the rule for ${origin}`);
+  } catch (e) {
+    addError("Couldn't save the site rule: " + (e.message || e));
   }
 }
 
@@ -424,13 +512,16 @@ function showPermission(req) {
   const el = document.createElement("div");
   el.className = "perm-card" + (req.sensitive ? " sensitive" : "");
   const action = describeAction(req.toolName, req.args);
+  const title = req.sensitive ? "⚠ Sensitive site" : req.newSite ? "New site — trust it?" : "Allow action?";
+  const intro = req.newSite
+    ? `You're in <strong>only-allowed-sites</strong> mode and <span class="origin">${escapeHtml(req.origin)}</span> isn't on your list. OpenSidekick wants to <strong>${escapeHtml(action)}</strong> here.`
+    : `OpenSidekick wants to <strong>${escapeHtml(action)}</strong> on <span class="origin">${escapeHtml(req.origin)}</span>.`;
   el.innerHTML = `
-    <h3>${req.sensitive ? "⚠ Sensitive site" : "Allow action?"}</h3>
-    <p>OpenSidekick wants to <strong>${escapeHtml(action)}</strong> on
-       <span class="origin">${escapeHtml(req.origin)}</span>.</p>
+    <h3>${title}</h3>
+    <p>${intro}</p>
     <div class="perm-buttons">
       <button class="primary" data-choice="once">Allow once</button>
-      ${req.sensitive ? "" : '<button data-choice="always">Always allow this site</button>'}
+      ${req.sensitive ? "" : `<button data-choice="always">${req.newSite ? "Trust this site" : "Always allow this site"}</button>`}
       <button class="danger" data-choice="decline">Decline</button>
     </div>`;
   el.querySelectorAll("button").forEach((btn) =>
@@ -461,8 +552,17 @@ function describeAction(name, args) {
       return `navigate to ${args ? args.url : "a page"}`;
     case "scroll":
       return "scroll the page";
+    case "read_page":
+    case "get_page_text":
+      return "read this page";
+    case "take_screenshot":
+      return "take a screenshot";
+    case "read_console":
+      return "read the page's console";
+    case "read_network":
+      return "read the page's network requests";
     default:
-      return name;
+      return name.replace(/_/g, " ");
   }
 }
 

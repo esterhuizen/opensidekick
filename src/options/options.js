@@ -241,6 +241,12 @@ function wireSettings() {
       persist();
     }),
   );
+  document.querySelectorAll('input[name="siteAccess"]').forEach((r) =>
+    r.addEventListener("change", () => {
+      config.settings.siteAccess = r.value;
+      persist();
+    }),
+  );
   $("#max-steps").addEventListener("change", (e) => {
     config.settings.maxSteps = clampInt(e.target.value, 1, 100, DEFAULT_SETTINGS.maxSteps);
     persist();
@@ -275,6 +281,8 @@ function renderSettings() {
   const s = config.settings;
   const radio = document.querySelector(`input[name="autonomy"][value="${s.autonomy}"]`);
   if (radio) radio.checked = true;
+  const saRadio = document.querySelector(`input[name="siteAccess"][value="${s.siteAccess || "all"}"]`);
+  if (saRadio) saRadio.checked = true;
   $("#max-steps").value = s.maxSteps;
   $("#max-tokens").value = s.maxTokens;
   $("#temperature").value = s.temperature;

@@ -103,6 +103,10 @@ export const DEFAULT_SETTINGS = {
   // "auto" -> act without asking on already-allowed sites (still confirms new
   //           domains and blocked categories).
   autonomy: "ask",
+  // "all"       -> the agent may work on any site (per-site rules still apply).
+  // "allowlist" -> the agent only works on sites the user has allowed; anything
+  //                else prompts first — even reads, even in auto mode.
+  siteAccess: "all",
   // Hard ceiling on agent tool-calling iterations per task (prevents runaways).
   maxSteps: 25,
   // Expose a screenshot tool so vision-capable models can see the page on demand.
