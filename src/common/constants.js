@@ -14,6 +14,11 @@ export const SESSION_CONVO_KEY = "opensidekick.conversation.v1";
 // discarded yet — so closing the side panel doesn't silently lose the steps.
 export const SESSION_PENDING_WF_KEY = "opensidekick.pendingWorkflow.v1";
 
+// chrome.storage.local key for the composer's prompt history (shell-style
+// up/down recall). Survives browser restarts; capped, most recent last.
+export const PROMPT_HISTORY_KEY = "opensidekick.promptHistory.v1";
+export const PROMPT_HISTORY_MAX = 50;
+
 // Provider "type" determines which wire protocol we speak.
 //   "openai"    -> POST {baseUrl}/chat/completions   (OpenRouter, OpenAI, Ollama,
 //                  Groq, Together, DeepSeek, LM Studio, Google's OpenAI-compatible

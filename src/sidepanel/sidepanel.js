@@ -1,7 +1,7 @@
 // Side panel UI controller. Talks to the service worker via runtime messages
 // and renders the streaming agent transcript.
 
-import { MSG, STORAGE_KEY, SESSION_PENDING_WF_KEY } from "../common/constants.js";
+import { MSG, STORAGE_KEY, SESSION_PENDING_WF_KEY, PROMPT_HISTORY_KEY, PROMPT_HISTORY_MAX } from "../common/constants.js";
 import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 
 const els = {
@@ -93,9 +93,12 @@ async function init() {
   els.composer.addEventListener("submit", onSubmit);
   els.input.addEventListener("keydown", onInputKeydown);
   els.input.addEventListener("input", () => {
+    // Editing a recalled prompt ends history browsing (the edited text stays).
+    exitHistory();
     autoGrow();
     updateSlashMenu();
   });
+  loadPromptHistory();
   els.input.addEventListener("blur", () => setTimeout(hideSlashMenu, 150));
   els.stop.addEventListener("click", () => send({ type: MSG.STOP_TASK }));
   els.newChat.addEventListener("click", newChat);
@@ -293,6 +296,8 @@ function onSubmit(e) {
     return;
   }
   els.empty.hidden = true;
+  rememberPrompt(text);
+  exitHistory();
   // The user bubble is rendered from the worker's `user_echo` event so that
   // runs triggered by anything (composer, context menu) show consistently.
   els.input.value = "";
@@ -603,10 +608,100 @@ function onInputKeydown(e) {
     if (e.key === "Tab") return e.preventDefault(), selectSlash(slashIndex);
     if (e.key === "Escape") return e.preventDefault(), hideSlashMenu();
   }
+  if (handleHistoryKey(e)) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     onSubmit(e);
   }
+}
+
+// -------------------------------------------------------------------------
+// Prompt history — shell-style ↑/↓ recall in the composer. ↑ in an empty box
+// (or on the first line while browsing) recalls older prompts; ↓ on the last
+// line moves newer, and past the newest restores whatever you had typed.
+// Recalled text is editable; Enter runs it as usual. Esc exits browsing.
+// -------------------------------------------------------------------------
+let promptHistory = []; // chronological, most recent LAST
+let histIndex = -1; // -1 = not browsing; otherwise 0 = most recent
+let histDraft = null; // what was in the box when browsing started
+
+async function loadPromptHistory() {
+  try {
+    const raw = await chrome.storage.local.get(PROMPT_HISTORY_KEY);
+    if (Array.isArray(raw[PROMPT_HISTORY_KEY])) promptHistory = raw[PROMPT_HISTORY_KEY];
+  } catch {
+    /* start empty */
+  }
+}
+
+function rememberPrompt(text) {
+  if (promptHistory[promptHistory.length - 1] === text) return; // consecutive dupe
+  promptHistory.push(text);
+  if (promptHistory.length > PROMPT_HISTORY_MAX) promptHistory = promptHistory.slice(-PROMPT_HISTORY_MAX);
+  chrome.storage.local.set({ [PROMPT_HISTORY_KEY]: promptHistory }).catch(() => {});
+}
+
+function exitHistory() {
+  histIndex = -1;
+  histDraft = null;
+}
+
+function recallHistory(index) {
+  histIndex = index;
+  const text = promptHistory[promptHistory.length - 1 - index];
+  els.input.value = text;
+  // Caret at the end — ready to edit or run.
+  els.input.setSelectionRange(text.length, text.length);
+  autoGrow();
+}
+
+function caretOnFirstLine() {
+  return !els.input.value.slice(0, els.input.selectionStart).includes("\n");
+}
+function caretOnLastLine() {
+  return !els.input.value.slice(els.input.selectionEnd).includes("\n");
+}
+
+// Returns true when the keystroke was consumed by history navigation.
+function handleHistoryKey(e) {
+  if (e.key === "Escape" && histIndex !== -1) {
+    e.preventDefault();
+    els.input.value = histDraft || "";
+    autoGrow();
+    exitHistory();
+    return true;
+  }
+  if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (!promptHistory.length) return false;
+    if (histIndex === -1) {
+      // Only hijack ↑ when it can't mean caret movement the user intended:
+      // an empty box starts browsing; typed text keeps normal caret behavior.
+      if (els.input.value.trim() !== "") return false;
+      e.preventDefault();
+      histDraft = els.input.value;
+      recallHistory(0);
+      return true;
+    }
+    if (caretOnFirstLine() && histIndex < promptHistory.length - 1) {
+      e.preventDefault();
+      recallHistory(histIndex + 1);
+      return true;
+    }
+    return false; // browsing a multiline entry — let the caret move
+  }
+  if (e.key === "ArrowDown" && histIndex !== -1 && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (!caretOnLastLine()) return false;
+    e.preventDefault();
+    if (histIndex === 0) {
+      els.input.value = histDraft || "";
+      autoGrow();
+      exitHistory();
+    } else {
+      recallHistory(histIndex - 1);
+    }
+    return true;
+  }
+  return false;
 }
 
 function updateSlashMenu() {

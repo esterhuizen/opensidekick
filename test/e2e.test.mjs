@@ -766,6 +766,45 @@ async function main() {
     check(/remembered: plum/.test(lastAnswer), `panel-context: composer follow-up after reopen keeps the context (got "${lastAnswer.slice(0, 40)}")`);
     await panel2.close();
 
+    // --- Prompt history: ↑/↓ recall, edit, run ---
+    await optPage.evaluate(([key, hist]) => chrome.storage.local.set({ [key]: hist }), [
+      "opensidekick.promptHistory.v1",
+      ["find the price of the blue widget", "summarize this page in three bullets"],
+    ]);
+    const histPanel2 = await context.newPage();
+    await histPanel2.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await histPanel2.waitForTimeout(500);
+    await histPanel2.click("#input");
+    await histPanel2.keyboard.press("ArrowUp");
+    let v = await histPanel2.$eval("#input", (el) => el.value);
+    check(v === "summarize this page in three bullets", `history: ↑ recalls the most recent prompt (got "${v}")`);
+    await histPanel2.keyboard.press("ArrowUp");
+    v = await histPanel2.$eval("#input", (el) => el.value);
+    check(v === "find the price of the blue widget", `history: ↑ again goes older (got "${v}")`);
+    await histPanel2.keyboard.press("ArrowDown");
+    v = await histPanel2.$eval("#input", (el) => el.value);
+    check(v === "summarize this page in three bullets", `history: ↓ goes newer (got "${v}")`);
+    await histPanel2.keyboard.press("ArrowDown");
+    v = await histPanel2.$eval("#input", (el) => el.value);
+    check(v === "", `history: ↓ past the newest restores the empty draft (got "${v}")`);
+    // Recall, edit, run — the edited prompt lands in history and the run starts.
+    await histPanel2.keyboard.press("ArrowUp");
+    await histPanel2.keyboard.type(" please");
+    v = await histPanel2.$eval("#input", (el) => el.value);
+    check(v === "summarize this page in three bullets please", `history: recalled prompt is editable (got "${v}")`);
+    await testPage.bringToFront(); // the run needs a real page as the active tab
+    await histPanel2.keyboard.press("Enter");
+    for (let i = 0; i < 100; i++) {
+      const idle = await histPanel2.$eval("#send-btn", (el) => !el.hidden).catch(() => false);
+      const bubbles = await histPanel2.$$eval(".msg.user", (n) => n.length).catch(() => 0);
+      if (idle && bubbles > 0) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const histNow = await optPage.evaluate((key) => chrome.storage.local.get(key).then((r) => r[key] || []), "opensidekick.promptHistory.v1");
+    check(histNow[histNow.length - 1] === "summarize this page in three bullets please",
+      `history: running an edited recall appends it to history (last: "${histNow[histNow.length - 1]}")`);
+    await histPanel2.close();
+
     // --- Only-allowed-sites (allowlist) mode ---
     // (1) Unlisted site + AUTO mode: even the first read must prompt.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

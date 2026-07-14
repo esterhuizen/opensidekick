@@ -85,7 +85,8 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   clicks** even in auto mode; and **prompt-injection flagging** of page content.
   Sensitive sites (banking, payments, crypto) always confirm per action.
 - **Saved prompts** — store reusable prompts and insert them by typing `/` in the
-  chat (with an autocomplete menu).
+  chat (with an autocomplete menu). The composer also has shell-style **prompt
+  history**: press ↑/↓ to recall, edit, and re-run previous prompts.
 - **Scheduled tasks** — run a prompt on a repeating schedule (hourly / daily /
   weekly, or any interval) while Chrome is open; the result arrives as a
   notification. Unattended runs act without asking and decline purchases/deletions.

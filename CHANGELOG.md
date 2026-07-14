@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Prompt history in the composer.** Press ↑ in the chat box to recall your
+  previous prompts (↓ moves back toward the newest; going past it restores
+  whatever you were typing). Recalled prompts are editable and run with Enter,
+  shell-style. History keeps the last 50 prompts, survives browser restarts,
+  and skips consecutive duplicates. Esc exits browsing. Arrows keep their
+  normal caret behavior while you're typing or moving within a multiline
+  prompt.
 - **Only-allowed-sites mode + a site trust chip** (user-requested). A new site
   access setting (Settings → Site permissions) locks the agent down to domains
   you trust: on any unlisted site it won't even *read* the page without asking
