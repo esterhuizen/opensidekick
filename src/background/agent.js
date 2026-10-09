@@ -77,6 +77,7 @@ export async function runAgent(deps) {
     setTabId: (id) => {
       focusedTabId = id;
     },
+    enableCdpInput: s.enableNativeInput !== false,
   };
 
   // Plan-approval mode: propose a plan and wait for approval before acting.
@@ -411,7 +412,7 @@ function summarizeResult(name, r) {
     case "get_page_text":
       return `read ${r.text ? r.text.length : 0} chars of text`;
     case "click_element":
-      return `clicked ${r.clicked || ""}`;
+      return `clicked ${r.clicked || ""} [${r.trusted_input ? "trusted CDP" : r.input_fallback === "dom" ? "DOM fallback" : "DOM synthetic"}]`;
     case "type_text":
       return `typed "${(r.typed || "").slice(0, 40)}"${r.submitted ? " and submitted" : ""}`;
     case "select_option":

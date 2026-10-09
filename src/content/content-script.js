@@ -200,6 +200,8 @@
       /* ignore */
     }
     switch (msg.action) {
+      case "target":
+        return targetPoint(el);
       case "click":
         return click(el);
       case "type":
@@ -219,6 +221,49 @@
       default:
         return { ok: false, error: `Unknown action ${msg.action}` };
     }
+  }
+
+  // Resolve a ref to a real viewport click point for browser-level input.
+  // Sample several points so OpenSidekick's own activity pill (or another
+  // overlay) does not accidentally receive the native click.
+  function targetPoint(el) {
+    const r = el.getBoundingClientRect();
+    const left = Math.max(0, r.left);
+    const right = Math.min(window.innerWidth, r.right);
+    const top = Math.max(0, r.top);
+    const bottom = Math.min(window.innerHeight, r.bottom);
+    if (right <= left || bottom <= top) {
+      return { ok: false, error: "Element is not inside the visible viewport after scrolling." };
+    }
+
+    const xs = [(left + right) / 2, left + (right - left) * 0.25, left + (right - left) * 0.75];
+    const ys = [(top + bottom) / 2, top + (bottom - top) * 0.25, top + (bottom - top) * 0.75];
+    let fallback = { x: xs[0], y: ys[0] };
+
+    for (const y of ys) {
+      for (const x of xs) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && (hit === el || el.contains(hit))) {
+          return {
+            ok: true,
+            x,
+            y,
+            target: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase(),
+          };
+        }
+      }
+    }
+
+    // If another page element covers the target entirely, preserve the same
+    // coordinates a human center-click would use. CDP will then faithfully hit
+    // the covering element rather than bypassing page hit-testing.
+    return {
+      ok: true,
+      x: fallback.x,
+      y: fallback.y,
+      target: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase(),
+      obstructed: true,
+    };
   }
 
   function hover(el) {

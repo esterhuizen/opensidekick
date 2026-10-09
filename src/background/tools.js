@@ -3,7 +3,7 @@
 // provider layer converts them to the right wire format.
 
 import { MSG } from "../common/constants.js";
-import { readConsole, readNetwork } from "./cdp.js";
+import { dispatchMouseAction, readConsole, readNetwork } from "./cdp.js";
 
 export const TOOL_DEFS = [
   {
@@ -269,7 +269,7 @@ export async function executeTool(name, args, ctx) {
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "click", ref: args.ref });
+      return await mouseAction(ctx, "click", args.ref);
     case "type_text":
       return await csSend(await ctx.getTabId(), {
         type: MSG.CS_ACT,
@@ -286,13 +286,13 @@ export async function executeTool(name, args, ctx) {
         value: args.value,
       });
     case "hover_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "hover", ref: args.ref });
+      return await mouseAction(ctx, "hover", args.ref);
     case "double_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "dblclick", ref: args.ref });
+      return await mouseAction(ctx, "dblclick", args.ref);
     case "right_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "contextmenu", ref: args.ref });
+      return await mouseAction(ctx, "contextmenu", args.ref);
     case "drag_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+      return await mouseAction(ctx, "drag", args.from_ref, args.to_ref);
     case "press_keys":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
     case "take_screenshot":
@@ -367,6 +367,65 @@ async function csSend(tabId, msg) {
       error:
         "Could not reach the page. It may be a restricted page (chrome://, the " +
         "Chrome Web Store, or a PDF), or it navigated away.",
+    };
+  }
+}
+
+async function mouseAction(ctx, action, ref, toRef = undefined) {
+  const tabId = await ctx.getTabId();
+  const domFallback = () =>
+    csSend(tabId, {
+      type: MSG.CS_ACT,
+      action,
+      ref,
+      ...(toRef == null ? {} : { toRef }),
+    });
+
+  // Native input is deliberately opt-in because chrome.debugger shows a
+  // browser banner while attached. Without it, retain the existing DOM-event
+  // implementation unchanged.
+  if (!ctx.enableCdpInput) return await domFallback();
+
+  const point = await csSend(tabId, { type: MSG.CS_ACT, action: "target", ref });
+  if (!point || point.ok === false) return point || { ok: false, error: "Could not resolve mouse target." };
+
+  let toPoint = null;
+  if (action === "drag") {
+    toPoint = await csSend(tabId, { type: MSG.CS_ACT, action: "target", ref: toRef });
+    if (!toPoint || toPoint.ok === false) return toPoint || { ok: false, error: "Could not resolve drag target." };
+  }
+
+  try {
+    await dispatchMouseAction(tabId, action, point, toPoint);
+    const label = point.target || "";
+    switch (action) {
+      case "hover":
+        return { ok: true, hovered: label, trusted_input: true };
+      case "dblclick":
+        return { ok: true, doubleClicked: label, trusted_input: true };
+      case "contextmenu":
+        return { ok: true, rightClicked: label, trusted_input: true };
+      case "drag":
+        return { ok: true, dragged: true, trusted_input: true };
+      default:
+        return { ok: true, clicked: label, trusted_input: true };
+    }
+  } catch (e) {
+    // DevTools or another debugger can make chrome.debugger.attach unavailable.
+    // Preserve compatibility rather than turning that into a hard failure.
+    const fallback = await domFallback();
+    if (fallback && fallback.ok !== false) {
+      return {
+        ...fallback,
+        trusted_input: false,
+        input_fallback: "dom",
+        native_input_error: String(e && e.message ? e.message : e),
+      };
+    }
+    return {
+      ok: false,
+      error: "Native mouse input failed, and the DOM fallback also failed: " +
+        String(e && e.message ? e.message : e),
     };
   }
 }

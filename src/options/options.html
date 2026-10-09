@@ -119,8 +119,13 @@
         </div>
 
         <div class="field">
-          <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="tag warn-tag">debugger banner</span></label>
-          <p class="hint">Adds read_console / read_network tools for debugging pages, via Chrome’s debugger. Chrome shows a “debugging this browser” banner while a task runs; it clears when the task ends.</p>
+          <label class="radio"><input type="checkbox" id="enable-native-input" /> Use native browser mouse input <span class="tag">on by default</span></label>
+          <p class="hint">Uses Chrome’s debugger to send browser-level mouse input instead of synthesized DOM clicks. Recommended for reliable automation. Chrome shows a debugger banner while native input is active.</p>
+        </div>
+
+        <div class="field">
+          <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="tag warn-tag">developer</span></label>
+          <p class="hint">Adds read_console / read_network for debugging pages. This is separate from native mouse input.</p>
         </div>
       </section>
 

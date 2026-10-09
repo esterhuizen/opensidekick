@@ -34,6 +34,7 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
   <button id="go" type="button">Search</button>
   <button id="logbtn" type="button">Log Event</button>
   <button id="buybtn" type="button">Buy now</button>
+  <button id="trustedbtn" type="button">Trusted click</button>
   <div id="out"></div>
   <script>
     document.getElementById('go').addEventListener('click', function () {
@@ -45,6 +46,9 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
     });
     document.getElementById('buybtn').addEventListener('click', function () {
       document.getElementById('out').textContent = 'bought';
+    });
+    document.getElementById('trustedbtn').addEventListener('click', function (event) {
+      document.getElementById('out').textContent = event.isTrusted ? 'trusted-click' : 'synthetic-click';
     });
   </script>
 </body></html>`;
@@ -114,6 +118,15 @@ function decide(messages) {
     const consoleHit = parsed.some((p) => Array.isArray(p.messages) && p.messages.some((mm) => (mm.text || "").includes("cdp-boom")));
     const netHit = parsed.some((p) => Array.isArray(p.requests) && p.requests.some((rr) => (rr.url || "").includes("/ping")));
     return { kind: "text", text: `console_boom=${consoleHit} network_ping=${netHit}` };
+  }
+
+  // Trusted input: this button records whether Chromium delivered a real
+  // browser input event or a synthetic DOM event.
+  if (/trusted click|real mouse|native mouse/.test(firstUser)) {
+    const trustedBtn = elements.find((e) => (e.name || "").toLowerCase().includes("trusted click"));
+    if (n === 0) return { kind: "tool", name: "read_page", args: {} };
+    if (n === 1) return { kind: "tool", name: "click_element", args: { ref: trustedBtn?.ref } };
+    return { kind: "text", text: "trusted_click_done" };
   }
 
   // Sensitive action (D): click "Buy now" — should force a confirmation.
@@ -506,6 +519,14 @@ async function main() {
     const answerOf = (events) => [...events].reverse().find((e) => (e.kind === "assistant_end" && e.content) || (e.kind === "finish" && e.summary))?.content ??
       [...events].reverse().find((e) => e.kind === "finish" && e.summary)?.summary ?? "";
     const toolsOf = (events) => events.filter((e) => e.kind === "tool_start").map((e) => e.name);
+
+    // --- CDP trusted mouse input: the page explicitly rejects synthetic clicks. ---
+    await testPage.evaluate(() => { document.querySelector("#out").textContent = ""; });
+    const trusted = await drive("Use a real mouse click on the Trusted click button.");
+    const trustedOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
+    check(toolsOf(trusted.events).includes("click_element"), "trusted-input: agent called click_element");
+    check(trustedOut === "trusted-click", `trusted-input: click arrived as event.isTrusted=true (got "${trustedOut}")`);
+    check(trusted.events.filter((e) => e.kind === "error").length === 0, "trusted-input: no error events");
 
     // --- run_javascript: injected code mutates the DOM and returns a value ---
     // (Also verifies (C) the on-page activity overlay appears and clears.)
