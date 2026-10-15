@@ -72,6 +72,7 @@
       "[role=menuitem]",
       "[role=switch]",
       "[role=option]",
+      "[role=combobox]",
       "[contenteditable=true]",
       "[contenteditable='']",
       "summary",
@@ -109,7 +110,8 @@
     const out = { ref, tag };
     if (role) out.role = role;
     if (type) out.type = type;
-    const name = accessibleName(el);
+    const customCombobox = role === "combobox" && tag !== "input" && tag !== "select";
+    const name = accessibleName(el, customCombobox ? comboboxText : undefined);
     if (name) out.name = name.slice(0, 160);
     if (tag === "input" || tag === "textarea") {
       out.value = (el.value || "").slice(0, 120);
@@ -121,13 +123,31 @@
         .map((o) => o.textContent.trim().slice(0, 60));
       out.value = el.value;
     }
+    if (customCombobox) {
+      const shown = comboboxText(el);
+      if (shown && shown !== out.name) out.value = shown.slice(0, 120);
+    }
     if (tag === "a" && el.href) out.href = shortUrl(el.href);
     if (el.getAttribute("aria-checked")) out.checked = el.getAttribute("aria-checked");
     if (el.disabled) out.disabled = true;
     return out;
   }
 
-  function accessibleName(el) {
+  // A custom combobox usually keeps its popup list inside itself. The options
+  // are listed as elements of their own, so leave them out of the box's text:
+  // otherwise its name or value reads "English EnglishDeutschFrançais…".
+  function comboboxText(el) {
+    let text = "";
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const popup = node.parentElement.closest("[role=listbox],[role=option]");
+      if (popup && popup !== el && el.contains(popup)) continue;
+      text += node.data;
+    }
+    return text.trim().replace(/\s+/g, " ");
+  }
+
+  function accessibleName(el, textOf = (node) => node.textContent) {
     const aria = el.getAttribute("aria-label");
     if (aria) return aria.trim();
     const labelledby = el.getAttribute("aria-labelledby");
@@ -145,7 +165,7 @@
     }
     const closestLabel = el.closest("label");
     if (closestLabel) return closestLabel.textContent.trim();
-    const text = (el.textContent || "").trim().replace(/\s+/g, " ");
+    const text = (textOf(el) || "").trim().replace(/\s+/g, " ");
     if (text) return text;
     return (
       el.getAttribute("placeholder") ||
