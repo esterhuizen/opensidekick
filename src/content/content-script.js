@@ -311,14 +311,18 @@
     }
     el.dispatchEvent(new PointerEvent("pointerup", opts));
     el.dispatchEvent(new MouseEvent("mouseup", opts));
-    el.dispatchEvent(new MouseEvent("click", opts));
-    // Fallback for elements whose handler only listens to .click().
+    // Exactly one click. el.click() fires the click event and runs the element's
+    // default action (toggle a checkbox, follow a link, submit a form); sending a
+    // click event as well made toggles flip twice and _blank links open twice.
+    // Elements without .click() (e.g. SVG) get a plain click event.
     if (typeof el.click === "function") {
       try {
         el.click();
       } catch {
         /* ignore */
       }
+    } else {
+      el.dispatchEvent(new MouseEvent("click", opts));
     }
     return { ok: true, clicked: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase() };
   }

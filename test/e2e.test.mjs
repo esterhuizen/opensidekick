@@ -63,6 +63,15 @@ const TEST_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Test 
       document.getElementById('out').textContent = 'bought';
     });
   </script>
+
+  <label><input id="agree" type="checkbox" /> I agree to the terms</label>
+  <script>
+    // How many click events each element received: one agent click must be one event.
+    window.__clicks = {};
+    document.addEventListener('click', function (e) {
+      if (e.target.id) window.__clicks[e.target.id] = (window.__clicks[e.target.id] || 0) + 1;
+    }, true);
+  </script>
 </body></html>`;
 
 // A page whose visible text tries to hijack the agent (prompt injection).
@@ -184,6 +193,13 @@ function decide(messages) {
     if (n === 1) return { kind: "tool", name: "get_page_text", args: {} };
     const flagged = parsed.some((p) => p.suspected_injection === true);
     return { kind: "text", text: `injection_flagged=${flagged}` };
+  }
+
+  // Checkbox: one click_element on a checkbox must leave it checked.
+  if (/tick the agree box/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "read_page", args: {} };
+    if (n === 1) return { kind: "tool", name: "click_element", args: { ref: elements.find((e) => e.type === "checkbox")?.ref } };
+    return { kind: "tool", name: "finish", args: { summary: "Ticked the box." } };
   }
 
   // Action: read page, type into the search box, click Search. The search term
@@ -952,6 +968,8 @@ async function main() {
 
     check(inputVal === "cats", `agent typed "cats" into the search box (got "${inputVal}")`);
     check(outText === "Results for: cats", `agent clicked Search; page shows results (got "${outText}")`);
+    const goClicks = await testPage.evaluate(() => window.__clicks.go || 0);
+    check(goClicks === 1, `one click_element fires exactly one click event (got ${goClicks})`);
 
     // Inspect the streamed event transcript.
     const events = await optPage.evaluate(() => window.__events || []);
@@ -1010,6 +1028,13 @@ async function main() {
     check(toolsOf(js.events).includes("run_javascript"), "js: agent called run_javascript");
     check(jsOut === "js-ran", `js: injected code mutated the DOM (got "${jsOut}")`);
     check(/Test Search Page/.test(answerOf(js.events)), `js: run_javascript returned the H1 (got "${answerOf(js.events).slice(0, 40)}")`);
+
+    // --- click_element on a checkbox: one click must leave it checked (a
+    // duplicated click event toggled it twice, back to unchecked) ---
+    await drive("Tick the agree box.");
+    const agreed = await testPage.$eval("#agree", (el) => el.checked).catch(() => null);
+    const agreeClicks = await testPage.evaluate(() => window.__clicks.agree || 0);
+    check(agreed === true && agreeClicks === 1, `click: the checkbox is checked after one click (checked=${agreed}, click events=${agreeClicks})`);
 
     // --- read_console + read_network via the debugger (CDP) ---
     // (Also verifies (C) the on-page activity overlay appears and clears — this
