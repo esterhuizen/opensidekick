@@ -14,6 +14,8 @@ import {
   TRIMMED_NOTE,
 } from "../common/constants.js";
 import { matchPrompts, isSlashQuery } from "../common/prompts.js";
+import { escapeHtml } from "../common/escape.js";
+import { markdownToHtml, createStreamingRenderer, CODE_CLASS } from "../common/markdown.js";
 import { relativeTime } from "../background/sessions.js";
 
 const els = {
@@ -122,6 +124,25 @@ async function init() {
   }
 
   els.messages.addEventListener("scroll", onMessagesScroll, { passive: true });
+  // The copy control is inside the rendered code block, so it is wired by delegation.
+  els.messages.addEventListener("click", (e) => {
+    const btn = e.target.closest(".md-copy");
+    if (!btn) return;
+    const pre = btn.closest(`.${CODE_CLASS}`)?.querySelector("pre");
+    if (!pre) return;
+    const setLabel = (label) => {
+      btn.textContent = label;
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = "Copy";
+        btn.disabled = false;
+      }, 1000);
+    };
+    navigator.clipboard
+      .writeText(pre.textContent)
+      .then(() => setLabel("Copied"))
+      .catch(() => setLabel("Failed"));
+  });
   els.jumpLatest.addEventListener("click", () => {
     pinned = true;
     scroll();
@@ -184,7 +205,7 @@ function renderHistory(history) {
     else {
       const el = document.createElement("div");
       el.className = "msg assistant";
-      el.innerHTML = renderMarkdown(m.text);
+      el.innerHTML = markdownToHtml(m.text);
       els.messages.appendChild(el);
     }
   }
@@ -576,7 +597,7 @@ function startAssistant() {
   el.className = "msg assistant";
   el.innerHTML = '<span class="thinking"><span class="dot-pulse"></span>Thinking…</span>';
   els.messages.appendChild(el);
-  current = { el, raw: "", started: false };
+  current = { el, started: false, md: createStreamingRenderer(), timer: 0 };
   scroll();
 }
 
@@ -586,19 +607,28 @@ function appendAssistant(text) {
     current.el.innerHTML = "";
     current.started = true;
   }
-  current.raw += text;
-  current.el.innerHTML = renderMarkdown(current.raw);
+  current.md.append(text);
+  // One render per 16ms, on a timer: requestAnimationFrame does not run in a
+  // background tab, and the panel renders there too.
+  if (!current.timer) {
+    const c = current;
+    current.timer = setTimeout(() => {
+      c.timer = 0;
+      c.el.innerHTML = c.md.render();
+      scroll();
+    }, 16);
+  }
   scroll();
 }
 
 function endAssistant(content) {
   if (!current) return;
-  if (!current.started) {
-    if (content && content.trim()) {
-      current.el.innerHTML = renderMarkdown(content);
-    } else {
-      current.el.remove(); // pure tool-call turn with no visible text
-    }
+  if (current.timer) clearTimeout(current.timer);
+  const html = current.md.finalize(content);
+  if (html.trim()) {
+    current.el.innerHTML = html;
+  } else {
+    current.el.remove(); // pure tool-call turn with no visible text
   }
   current = null;
   scroll();
@@ -705,7 +735,7 @@ function addFinish(summary) {
   sealLog();
   const el = document.createElement("div");
   el.className = "msg assistant";
-  el.innerHTML = renderMarkdown(summary);
+  el.innerHTML = markdownToHtml(summary);
   els.messages.appendChild(el);
   scroll();
 }
@@ -1542,38 +1572,4 @@ function ic(name) {
 
 function send(msg) {
   return chrome.runtime.sendMessage(msg).catch(() => null);
-}
-
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-// Minimal, safe Markdown: escape first, then apply a small subset. Because we
-// escape before applying, model output can never inject raw HTML.
-function renderMarkdown(src) {
-  let t = escapeHtml(src);
-  // fenced code blocks
-  t = t.replace(/```([\s\S]*?)```/g, (_m, code) => `<pre><code>${code.replace(/^\n/, "")}</code></pre>`);
-  // inline code
-  t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  // bold / italic
-  t = t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  // links [text](url)
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  // bullet lists
-  t = t.replace(/(?:^|\n)((?:\s*[-*] .+(?:\n|$))+)/g, (m, block) => {
-    const items = block
-      .trim()
-      .split("\n")
-      .map((l) => "<li>" + l.replace(/^\s*[-*]\s+/, "") + "</li>")
-      .join("");
-    return "\n<ul>" + items + "</ul>";
-  });
-  // paragraphs / line breaks (leave block elements alone)
-  t = t
-    .split(/\n{2,}/)
-    .map((chunk) => (/^\s*<(ul|pre|h\d)/.test(chunk) ? chunk : "<p>" + chunk.replace(/\n/g, "<br>") + "</p>"))
-    .join("");
-  return t;
 }

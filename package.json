@@ -9,7 +9,7 @@
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
     "check": "for f in $(git ls-files '*.js' '*.mjs'); do node --check \"$f\" || exit 1; done && echo 'all JS OK'",
-    "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs && node test/safety.test.mjs && node test/plan.test.mjs && node test/prompts.test.mjs && node test/mcp.test.mjs && node test/migrations.test.mjs && node test/testmodel.test.mjs && node test/permissions.test.mjs && node test/venice.test.mjs && node test/decisions.test.mjs && node test/presets.test.mjs && node test/sessions.test.mjs && node test/model-test-messages.test.mjs",
+    "test:unit": "node test/providers.test.mjs && node test/convert.test.mjs && node test/safety.test.mjs && node test/plan.test.mjs && node test/prompts.test.mjs && node test/mcp.test.mjs && node test/migrations.test.mjs && node test/testmodel.test.mjs && node test/permissions.test.mjs && node test/venice.test.mjs && node test/decisions.test.mjs && node test/presets.test.mjs && node test/sessions.test.mjs && node test/model-test-messages.test.mjs && node test/markdown.test.mjs",
     "test:e2e": "node test/e2e.test.mjs && node test/decisions.e2e.mjs",
     "test:rec": "node test/recording.e2e.mjs",
     "test:real": "node test/real.e2e.mjs",

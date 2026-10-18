@@ -12,6 +12,7 @@ import {
 } from "../common/constants.js";
 import { presetFor } from "../common/presets.js";
 import { isLocalBaseUrl, thinkingVerdict, corsHint } from "../common/model-test-messages.js";
+import { escapeHtml } from "../common/escape.js";
 import { loadConfig, saveConfig, loadSessionIndex } from "../background/storage.js";
 import { listModels, testModel } from "../background/providers.js";
 import { connectServer, listTools } from "../background/mcp.js";
@@ -1150,8 +1151,4 @@ function clampInt(v, min, max, fallback) {
   const n = parseInt(v, 10);
   if (Number.isNaN(n)) return fallback;
   return Math.min(max, Math.max(min, n));
-}
-
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

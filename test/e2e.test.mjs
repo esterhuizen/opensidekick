@@ -136,6 +136,17 @@ function decide(messages) {
   // be poked mid-run (the model-switch note must wait for the run to end).
   if (/hold your reply/.test(lastUser)) return { kind: "text", text: "Holding on... done holding.", stallMs: 2500 };
 
+  // Every construct the side panel must draw, plus the destinations it must refuse.
+  const MD_ANSWER =
+    "## Findings\n1. first\n2. second\n3. third\n\n- one\n  - nested\n\n" +
+    "| Site | Status |\n| --- | --- |\n| acme | ok |\n| beta | down |\n\n" +
+    "> quoted note\n\n~~strikethrough~~\n\n```js\nconst x = 1;\n```\n\n" +
+    "![diagram](https://example.com/i.png) and [relative](/docs) and [safe](https://a.b/c)\n\n" +
+    "Photo: https://example.org/files/my_report_v2.png";
+  if (/format the answer as markdown/.test(lastUser)) return { kind: "text", text: MD_ANSWER };
+  // The same answer, streamed, so the streamed DOM can be compared with the one-shot DOM.
+  if (/stream markdown/.test(lastUser)) return { kind: "text", text: MD_ANSWER, stallMs: 1200 };
+
   // Context retention: only answerable if the FIRST turn is still in the
   // conversation when the follow-up arrives (tests survival of a worker restart).
   if (/what is the magic word/.test(firstUser) || messages.some((m) => typeof m.content === "string" && /what is the magic word/i.test(m.content))) {
@@ -2229,6 +2240,78 @@ async function main() {
     const activeAfter = await gatePanel.$eval("#autonomy .seg.active", (el) => el.dataset.mode).catch(() => "");
     check(activeAfter === "auto", `autonomy: the Auto segment becomes active (got "${activeAfter}")`);
     await gatePanel.close();
+
+    // --- Markdown rendering in the chat transcript ---
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);
+    const mdPanel = await context.newPage();
+    await mdPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await mdPanel.waitForTimeout(400);
+    await mdPanel.click("#new-chat");
+    await mdPanel.waitForTimeout(300);
+    const mdProbe = (pg) =>
+      pg
+        .$$eval(".msg.assistant", (els) => {
+          const last = els[els.length - 1];
+          return {
+            html: last.innerHTML,
+            h2: [...last.querySelectorAll("h2")].map((e) => e.textContent),
+            olItems: last.querySelectorAll("ol > li").length,
+            nested: last.querySelectorAll("li ul li").length,
+            tableRows: last.querySelectorAll("table tbody tr").length,
+            tableHead: [...last.querySelectorAll("th")].map((e) => e.textContent).join(","),
+            quote: [...last.querySelectorAll("blockquote")].map((e) => e.textContent.trim()),
+            del: [...last.querySelectorAll("s, del")].map((e) => e.textContent),
+            codeLang: [...last.querySelectorAll(".md-code-lang")].map((e) => e.textContent),
+            codeText: [...last.querySelectorAll("pre code")].map((e) => e.textContent),
+            links: [...last.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+            imgs: last.querySelectorAll("img").length,
+            text: last.textContent,
+          };
+        })
+        .catch(() => null);
+    const md0 = await mdPanel.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+    const mdDone = await panelSend(mdPanel, "Format the answer as markdown", md0);
+    check(mdDone > 0, "markdown: the markdown turn completed");
+    const md = await mdProbe(mdPanel);
+    check(md && md.h2.includes("Findings"), `markdown: heading renders as h2 (got ${JSON.stringify(md && md.h2)})`);
+    check(md && md.olItems === 3, `markdown: ordered list renders 3 items (got ${md && md.olItems})`);
+    check(md && md.nested === 1, `markdown: nested list renders inside its parent item (got ${md && md.nested})`);
+    check(md && md.tableRows === 2 && md.tableHead === "Site,Status", `markdown: table renders its header and 2 rows (got ${JSON.stringify(md && [md.tableHead, md.tableRows])})`);
+    check(md && md.quote.includes("quoted note"), `markdown: blockquote renders (got ${JSON.stringify(md && md.quote)})`);
+    check(md && md.del.includes("strikethrough"), `markdown: strikethrough renders (got ${JSON.stringify(md && md.del)})`);
+    check(md && md.codeLang.includes("js") && md.codeText[0] === "const x = 1;", `markdown: fence language is a label, not code (got ${JSON.stringify(md && [md.codeLang, md.codeText])})`);
+    check(md && md.imgs === 0, `markdown: an image never becomes an <img> (got ${md && md.imgs})`);
+    check(md && md.links.length === 2 && md.links[0].startsWith("https://a.b"), `markdown: only absolute links are anchors (got ${JSON.stringify(md && md.links)})`);
+    check(md && md.links.some((h) => h === "https://example.org/files/my_report_v2.png"),
+      `markdown: a bare URL keeps its underscores (got ${JSON.stringify(md && md.links)})`);
+    check(md && !/##|\| |~~|> quoted/.test(md.text), `markdown: no literal markdown syntax leaks into the text (got "${md && md.text.slice(0, 50)}")`);
+
+    // The copy control hands the fence's code to the clipboard.
+    const copied = await mdPanel.evaluate(async () => {
+      const btn = document.querySelector(".md-copy");
+      if (!btn) return "no button";
+      const seen = [];
+      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = (t) => {
+        seen.push(t);
+        return orig(t);
+      };
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      navigator.clipboard.writeText = orig;
+      return seen[0] || "";
+    }).catch(() => "");
+    check(copied === "const x = 1;", `markdown: the copy control copies the fence code (got ${JSON.stringify(copied)})`);
+
+    // Streaming parity: the streamed DOM equals the one-shot DOM.
+    const streamedDone = await panelSend(mdPanel, "Stream markdown please", mdDone);
+    check(streamedDone > mdDone, "markdown: the streamed markdown turn completed");
+    const streamed = await mdProbe(mdPanel);
+    const oneShot = await panelSend(mdPanel, "Format the answer as markdown", streamedDone);
+    check(oneShot > streamedDone, "markdown: the single-shot markdown turn completed");
+    const final = await mdProbe(mdPanel);
+    check(streamed.html === final.html, `markdown: streamed DOM equals the single-shot DOM (${streamed && final ? (streamed.html === final.html ? "equal" : "differ") : "missing"})`);
+    await mdPanel.close();
   } finally {
     server2.close();
     await context.close();

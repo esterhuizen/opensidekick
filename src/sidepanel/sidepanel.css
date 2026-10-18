@@ -594,6 +594,8 @@ body {
   color: var(--os-ink);
   font-size: var(--os-fs-14);
   line-height: var(--os-lh-prose);
+  /* The renderer owns whitespace. */
+  white-space: normal;
 }
 .msg.assistant :first-child {
   margin-top: 0;
@@ -604,6 +606,89 @@ body {
 .msg.assistant p {
   margin: 0 0 8px;
 }
+.msg.assistant h1,
+.msg.assistant h2,
+.msg.assistant h3,
+.msg.assistant h4,
+.msg.assistant h5,
+.msg.assistant h6 {
+  font-weight: var(--os-w-semibold);
+  margin: 12px 0 6px;
+}
+.msg.assistant h1 {
+  font-size: var(--os-fs-20);
+  line-height: var(--os-lh-20);
+}
+.msg.assistant h2 {
+  font-size: var(--os-fs-16);
+  line-height: var(--os-lh-16);
+}
+.msg.assistant h3,
+.msg.assistant h4 {
+  font-size: var(--os-fs-14);
+  line-height: var(--os-lh-14);
+}
+.msg.assistant h5,
+.msg.assistant h6 {
+  font-size: var(--os-fs-13);
+  line-height: var(--os-lh-13);
+  color: var(--os-ink-soft);
+}
+.msg.assistant :is(h1, h2, h3, h4, h5, h6) code {
+  font-size: inherit;
+}
+.msg.assistant ul,
+.msg.assistant ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.msg.assistant li + li {
+  margin-top: 4px;
+}
+.msg.assistant li > ul,
+.msg.assistant li > ol {
+  margin: 4px 0 0;
+}
+.msg.assistant li::marker {
+  color: var(--os-muted);
+}
+.msg.assistant li input[type="checkbox"] {
+  accent-color: var(--os-muted);
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+}
+.msg.assistant blockquote {
+  border-left: 2px solid var(--os-line-2);
+  color: var(--os-ink-soft);
+  margin: 0 0 8px;
+  padding-left: 12px;
+}
+.msg.assistant hr {
+  border: 0;
+  height: 1px;
+  background: var(--os-line-2);
+  margin: 12px 0;
+}
+/* markdown-it emits <s>; <del> is the semantic equivalent. */
+.msg.assistant s,
+.msg.assistant del {
+  color: var(--os-muted);
+}
+.msg.assistant strong {
+  font-weight: var(--os-w-semibold);
+}
+.msg.assistant a {
+  color: var(--os-accent-ink);
+  text-decoration: none;
+}
+.msg.assistant a:hover {
+  text-decoration: underline;
+}
+.msg.assistant a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--os-accent-ring);
+  border-radius: var(--os-r-sm);
+}
 .msg.assistant code {
   font-family: var(--os-mono);
   font-size: var(--os-fs-12);
@@ -611,28 +696,109 @@ body {
   border-radius: var(--os-r-sm);
   padding: 1px 4px;
 }
-.msg.assistant pre {
-  background: var(--os-surface);
+
+/* Code block: a banner with the fence language and the copy control, the code as a scrollport. */
+.msg.assistant .md-code {
   border: 1px solid var(--os-line);
   border-radius: var(--os-r);
+  background: var(--os-surface);
+  margin: 0 0 8px;
+  overflow: hidden;
+}
+.msg.assistant .md-code-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--os-line);
+  font-family: var(--os-mono);
+  font-size: var(--os-fs-12);
+  line-height: var(--os-lh-12);
+  color: var(--os-muted);
+}
+.msg.assistant .md-code-banner:only-child {
+  border-bottom: 0;
+}
+.msg.assistant .md-copy {
+  font: inherit;
+  font-size: var(--os-fs-12);
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--os-line-2);
+  border-radius: var(--os-r-sm);
+  background: var(--os-surface);
+  color: var(--os-ink-soft);
+  cursor: pointer;
+}
+.msg.assistant .md-copy:hover {
+  background: var(--os-hover);
+}
+.msg.assistant .md-copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--os-accent-ring);
+}
+.msg.assistant .md-copy:disabled {
+  cursor: default;
+  color: var(--os-good-ink);
+  border-color: var(--os-line);
+}
+.msg.assistant .md-code pre {
+  margin: 0;
   padding: 8px 12px;
-  overflow-x: auto;
+  background: none;
+  border: 0;
   font-family: var(--os-mono);
   font-size: var(--os-fs-12);
   line-height: 18px;
+  overflow-x: auto;
+  white-space: pre;
 }
-.msg.assistant pre code {
+.msg.assistant .md-code pre:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--os-accent-ring);
+}
+.msg.assistant .md-code pre code {
   background: none;
   padding: 0;
   border-radius: 0;
 }
-.msg.assistant ul,
-.msg.assistant ol {
+
+/* Tables scroll inside their own box so a wide table cannot widen the panel. */
+.msg.assistant .md-table {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
   margin: 0 0 8px;
-  padding-left: 20px;
+  border: 1px solid var(--os-line);
+  border-radius: var(--os-r);
+  background: var(--os-surface);
 }
-.msg.assistant strong {
+.msg.assistant .md-table:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--os-accent-ring);
+}
+.msg.assistant table {
+  border-collapse: collapse;
+  width: max-content;
+}
+.msg.assistant th,
+.msg.assistant td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--os-line);
+  font-size: var(--os-fs-13);
+  line-height: var(--os-lh-13);
+  min-width: 70px;
+  max-width: 200px;
+}
+.msg.assistant th {
   font-weight: var(--os-w-semibold);
+  border-bottom-color: var(--os-line-2);
+}
+.msg.assistant tr:last-child td {
+  border-bottom: 0;
+}
+.msg.assistant table code {
+  font-size: var(--os-fs-12);
 }
 
 /* Tool log. A run is a log, not a stack of cards: one rule, one dot per
