@@ -8,6 +8,14 @@ import { escapeHtml } from "./escape.js";
 // The code-block contract: the side panel finds the code inside this class.
 export const CODE_CLASS = "md-code";
 
+// Syntax highlighting is optional. The panel registers a highlighter that returns
+// escaped HTML; a fence with no language, no highlighter, or a language the
+// highlighter does not know renders as escaped text.
+let highlight = null;
+export function setHighlighter(fn) {
+  highlight = typeof fn === "function" ? fn : null;
+}
+
 const ALLOWED = /^(https?:\/\/|mailto:)/i;
 
 export function safeHref(url) {
@@ -38,11 +46,12 @@ md.renderer.rules.fence = (tokens, idx) => {
   const lang = tokens[idx].info.trim().split(/\s+/)[0] || "";
   const body = tokens[idx].content.replace(/\n$/, "");
   const banner = lang ? `<span class="md-code-lang">${escapeHtml(lang)}</span>` : "";
+  const bodyHtml = lang && highlight ? highlight(body, lang) : escapeHtml(body);
   return (
     `<div class="${CODE_CLASS}"><div class="${CODE_CLASS}-banner">` +
     banner +
     '<button type="button" class="md-copy" aria-label="Copy code">Copy</button>' +
-    `</div><pre tabindex="0"><code>${escapeHtml(body)}</code></pre></div>`
+    `</div><pre tabindex="0"><code>${bodyHtml}</code></pre></div>`
   );
 };
 

@@ -15,8 +15,20 @@ import {
 } from "../common/constants.js";
 import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 import { escapeHtml } from "../common/escape.js";
-import { markdownToHtml, createStreamingRenderer, CODE_CLASS } from "../common/markdown.js";
+import { markdownToHtml, createStreamingRenderer, CODE_CLASS, setHighlighter } from "../common/markdown.js";
 import { relativeTime } from "../background/sessions.js";
+
+// Prism loads as scripts in sidepanel.html, so it is a global by the time this
+// module runs. Prism's own DOM scan is switched off: the panel renders HTML
+// strings, and highlighting happens inside the fence rule.
+if (typeof Prism !== "undefined") {
+  Prism.manual = true;
+  setHighlighter((code, lang) => {
+    const grammar = Prism.languages[lang];
+    if (!grammar || code.length > 20000) return escapeHtml(code);
+    return Prism.highlight(code, grammar, lang);
+  });
+}
 
 const els = {
   messages: document.getElementById("messages"),

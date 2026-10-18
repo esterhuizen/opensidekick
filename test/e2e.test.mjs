@@ -141,6 +141,7 @@ function decide(messages) {
     "## Findings\n1. first\n2. second\n3. third\n\n- one\n  - nested\n\n" +
     "| Site | Status |\n| --- | --- |\n| acme | ok |\n| beta | down |\n\n" +
     "> quoted note\n\n~~strikethrough~~\n\n```js\nconst x = 1;\n```\n\n" +
+    "```notalanguage\nplain 2 + 2\n```\n\n" +
     "![diagram](https://example.com/i.png) and [relative](/docs) and [safe](https://a.b/c)\n\n" +
     "Photo: https://example.org/files/my_report_v2.png";
   if (/format the answer as markdown/.test(lastUser)) return { kind: "text", text: MD_ANSWER };
@@ -2263,6 +2264,8 @@ async function main() {
             del: [...last.querySelectorAll("s, del")].map((e) => e.textContent),
             codeLang: [...last.querySelectorAll(".md-code-lang")].map((e) => e.textContent),
             codeText: [...last.querySelectorAll("pre code")].map((e) => e.textContent),
+            tokens: last.querySelectorAll(".md-code pre code .token").length,
+            plainTokens: [...last.querySelectorAll(".md-code")].filter((d) => d.textContent.includes("plain 2 + 2")).map((d) => d.querySelectorAll(".token").length),
             links: [...last.querySelectorAll("a")].map((a) => a.getAttribute("href")),
             imgs: last.querySelectorAll("img").length,
             text: last.textContent,
@@ -2280,6 +2283,8 @@ async function main() {
     check(md && md.quote.includes("quoted note"), `markdown: blockquote renders (got ${JSON.stringify(md && md.quote)})`);
     check(md && md.del.includes("strikethrough"), `markdown: strikethrough renders (got ${JSON.stringify(md && md.del)})`);
     check(md && md.codeLang.includes("js") && md.codeText[0] === "const x = 1;", `markdown: fence language is a label, not code (got ${JSON.stringify(md && [md.codeLang, md.codeText])})`);
+    check(md && md.tokens > 0, `markdown: a known language highlights tokens (got ${md && md.tokens})`);
+    check(md && md.plainTokens.length === 1 && md.plainTokens[0] === 0, `markdown: an unknown language renders plain text (got ${JSON.stringify(md && md.plainTokens)})`);
     check(md && md.imgs === 0, `markdown: an image never becomes an <img> (got ${md && md.imgs})`);
     check(md && md.links.length === 2 && md.links[0].startsWith("https://a.b"), `markdown: only absolute links are anchors (got ${JSON.stringify(md && md.links)})`);
     check(md && md.links.some((h) => h === "https://example.org/files/my_report_v2.png"),

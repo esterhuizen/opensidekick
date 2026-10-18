@@ -763,6 +763,52 @@ body {
   padding: 0;
   border-radius: 0;
 }
+/* Prism's token classes, mapped to the theme's code colours. */
+.msg.assistant .md-code .token.comment,
+.msg.assistant .md-code .token.prolog,
+.msg.assistant .md-code .token.cdata,
+.msg.assistant .md-code .token.doctype {
+  color: var(--os-tok-comment);
+  font-style: italic;
+}
+.msg.assistant .md-code .token.keyword,
+.msg.assistant .md-code .token.class-name,
+.msg.assistant .md-code .token.decorator {
+  color: var(--os-tok-key);
+}
+.msg.assistant .md-code .token.string,
+.msg.assistant .md-code .token.char,
+.msg.assistant .md-code .token.attr-value,
+.msg.assistant .md-code .token.regex {
+  color: var(--os-tok-string);
+}
+.msg.assistant .md-code .token.number,
+.msg.assistant .md-code .token.boolean,
+.msg.assistant .md-code .token.constant,
+.msg.assistant .md-code .token.symbol {
+  color: var(--os-tok-number);
+}
+.msg.assistant .md-code .token.function,
+.msg.assistant .md-code .token.method {
+  color: var(--os-tok-func);
+}
+.msg.assistant .md-code .token.operator,
+.msg.assistant .md-code .token.punctuation,
+.msg.assistant .md-code .token.variable,
+.msg.assistant .md-code .token.property,
+.msg.assistant .md-code .token.delimiter,
+.msg.assistant .md-code .token.separator {
+  color: var(--os-tok-punct);
+}
+.msg.assistant .md-code .token.tag,
+.msg.assistant .md-code .token.selector,
+.msg.assistant .md-code .token.attr-name,
+.msg.assistant .md-code .token.builtin,
+.msg.assistant .md-code .token.url,
+.msg.assistant .md-code .token.important,
+.msg.assistant .md-code .token.directive {
+  color: var(--os-tok-tag);
+}
 
 /* Tables scroll inside their own box so a wide table cannot widen the panel. */
 .msg.assistant .md-table {

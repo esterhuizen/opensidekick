@@ -53,6 +53,15 @@
   --os-bad-ink: #b91c1c;
   --os-bad-soft: #fdeceb;
 
+  /* Code tokens: Prism's classes map onto these seven. */
+  --os-tok-comment: #046a09;
+  --os-tok-key: #990077;
+  --os-tok-string: #669900;
+  --os-tok-number: #ae00a1;
+  --os-tok-func: #cc9966;
+  --os-tok-punct: #9a7e4a;
+  --os-tok-tag: #b16;
+
   /* Shape */
   --os-r-sm: 4px;
   --os-r: 8px;
@@ -136,6 +145,14 @@
     --os-bad-ink: #fca5a5;
     --os-bad-soft: #331b1b;
 
+    --os-tok-comment: #6f8f74;
+    --os-tok-key: #d4a0e0;
+    --os-tok-string: #d6a06a;
+    --os-tok-number: #e08fb0;
+    --os-tok-func: #d6c46a;
+    --os-tok-punct: #9d9b96;
+    --os-tok-tag: #e08f8f;
+
     --os-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
     --os-shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.6);
     --os-shadow-3: 0 24px 48px -16px rgba(0, 0, 0, 0.7);
@@ -174,6 +191,14 @@
   --os-bad: #f87171;
   --os-bad-ink: #fca5a5;
   --os-bad-soft: #331b1b;
+
+  --os-tok-comment: #6f8f74;
+  --os-tok-key: #d4a0e0;
+  --os-tok-string: #d6a06a;
+  --os-tok-number: #e08fb0;
+  --os-tok-func: #d6c46a;
+  --os-tok-punct: #9d9b96;
+  --os-tok-tag: #e08f8f;
 
   --os-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
   --os-shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.6);

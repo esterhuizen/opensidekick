@@ -1,6 +1,7 @@
 // Unit suite for the chat renderer. Plain node, no browser, no deps.
 
-import { markdownToHtml, safeHref, createStreamingRenderer } from "../src/common/markdown.js";
+import { markdownToHtml, safeHref, createStreamingRenderer, setHighlighter } from "../src/common/markdown.js";
+import { escapeHtml } from "../src/common/escape.js";
 
 let fail = 0;
 const eq = (got, want, label) => {
@@ -46,6 +47,21 @@ ok(markdownToHtml("~~~\nc\n~~~").includes("<code>c</code>"), "a tilde fence is a
 ok(markdownToHtml("```js\nunclosed").includes("<code>unclosed</code>"), "an unclosed fence at the end is a code block");
 ok(markdownToHtml("    indented").includes("<code>indented</code>"), "indented code renders as code");
 ok(markdownToHtml("`inline`").includes("<code>inline</code>"), "inline code renders");
+
+// ---- highlighting: the seam is optional ----
+const seen = [];
+setHighlighter((code, lang) => {
+  seen.push(lang);
+  return `<span class="token keyword">${escapeHtml(code)}</span>`;
+});
+const hl = markdownToHtml("```js\nconst x = 1;\n```");
+ok(hl.includes('<span class="token keyword">const x = 1;</span>'), "a registered highlighter draws the fence body");
+ok(seen.includes("js"), "the highlighter receives the fence language");
+ok(markdownToHtml("```\nc\n```").includes("<code>c</code>"), "a fence with no language skips the highlighter");
+ok(!seen.includes(""), "no highlighter call for a fence with no language");
+ok(markdownToHtml("```js\n<b>x</b>\n```").includes('<span class="token keyword">&lt;b&gt;x&lt;/b&gt;</span>'), "the highlighter's escaped output goes into the code element");
+setHighlighter(null);
+ok(markdownToHtml("```js\n<b>x</b>\n```").includes("<code>&lt;b&gt;x&lt;/b&gt;</code>"), "with no highlighter the fence body is escaped text");
 
 // ---- inline emphasis ----
 ok(markdownToHtml("**bold**").includes("<strong>bold</strong>"), "bold renders");
@@ -130,6 +146,17 @@ for (const size of [1, 3, 7, 16, 40]) {
   }
   eq(html, markdownToHtml(sample), `streaming at ${size}-byte chunks ends at the one-shot render`);
 }
+
+// Parity holds on the highlighted path too.
+setHighlighter((code, lang) => `<span class="token">${escapeHtml(code)}</span>`);
+const rh = createStreamingRenderer();
+let hlHtml = "";
+for (let i = 0; i < sample.length; i += 7) {
+  rh.append(sample.slice(i, i + 7));
+  hlHtml = rh.render();
+}
+eq(hlHtml, markdownToHtml(sample), "streaming with a highlighter ends at the one-shot render");
+setHighlighter(null);
 
 // The final render is the same render a finished message gets.
 const r = createStreamingRenderer();
