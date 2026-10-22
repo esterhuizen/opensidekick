@@ -34,6 +34,13 @@ export function safeHref(url) {
 // breaks: true. The chat used to emit <br> for a single newline, and replies rely
 // on it — a model writes "line one\nline two" as two lines, not one. The panel
 // sets white-space: normal, so the renderer owns whitespace.
+//
+// The linkify flags are left as upstream ships them. fuzzyLink stays off: a bare
+// domain is a guess, so setup.py and README.md — filenames a model writes — become
+// links to http://setup.py and http://README.md, invented from two-letter TLDs.
+// fuzzyEmail stays on: mailto: is in the allowlist, so a bare email in a reply is
+// a clickable mailto link, and a click goes through the browser's mail handler.
+// The panel's only network destination is still the user's provider.
 const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true });
 
 // markdown-it reads md.validateLink, the prototype method, not a constructor
@@ -41,13 +48,6 @@ const md = new MarkdownIt({ html: false, linkify: true, typographer: false, brea
 // autolinks, and linkify all ask it before they emit a destination, which leaves
 // no second place to check.
 md.validateLink = (url) => safeHref(url) !== null;
-
-// The linkify flags, left as upstream ships them. fuzzyLink stays off: a bare
-// domain is a guess, so setup.py and README.md — filenames a model writes — become
-// links to http://setup.py and http://README.md, invented from two-letter TLDs.
-// fuzzyEmail stays on: mailto: is in the allowlist, so a bare email in a reply is
-// a clickable mailto link, and a click goes through the browser's mail handler.
-// The panel's only network destination is still the user's provider.
 
 // A code fence gets a banner naming its language, so the language is not the
 // code's first line, and a Copy control. The copy handler lives in the side panel.
@@ -72,8 +72,25 @@ md.renderer.rules.code_block = (tokens, idx) =>
 md.renderer.rules.table_open = () => '<div class="md-table" tabindex="0"><table>';
 md.renderer.rules.table_close = () => "</table></div>";
 
-// An image is its alt text. No src, so no request.
-md.renderer.rules.image = (tokens, idx) => escapeHtml(tokens[idx].content);
+// An image is its alt text: no src, so no request. The bracket marker tells the
+// reader an image stood there, and an empty alt still leaves a marker. The alt is
+// plain text, not the source: the markers markdown-it recognised are dropped, so
+// "**b**" does not print as **b**, and a link inside the alt does not become a link
+// the reader never saw — the image is gone, its alt is a label, not content. An
+// unmatched marker is plain text and prints, so "![a **b** c*]" gives [image: a b c*].
+function plainAlt(tokens) {
+  let out = "";
+  for (const t of tokens) {
+    if (t.type === "text" || t.type === "code_inline") out += t.content;
+    else if (t.type === "softbreak" || t.type === "hardbreak") out += " "; // a newline in the alt is a space, not a word join
+  }
+  return escapeHtml(out);
+}
+
+md.renderer.rules.image = (tokens, idx) => {
+  const alt = plainAlt(tokens[idx].children);
+  return `<span class="md-image">[image${alt ? `: ${alt}` : ""}]</span>`;
+};
 
 // Task lists: markdown-it has none, so the marker is handled here. The inline
 // renderer draws a token's children, not its content, so the strip happens on
@@ -85,7 +102,10 @@ md.renderer.rules.paragraph_open = (tokens, idx, options, env, self) => {
     const m = first?.type === "text" ? /^\[([ xX])\]\s+/.exec(first.content) : null;
     if (m) {
       first.content = first.content.slice(m[0].length);
-      return `<p><input type="checkbox" disabled${m[1] === " " ? "" : " checked"} /> `;
+      const box = `<input type="checkbox" disabled${m[1] === " " ? "" : " checked"} /> `;
+      // A tight list item has no paragraph of its own (the token is hidden), so
+      // there is no closing </p> for an opening <p> to match.
+      return tokens[idx].hidden ? box : `<p>${box}`;
     }
   }
   return self.renderToken(tokens, idx, options);
@@ -103,6 +123,16 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 
 export function markdownToHtml(src) {
   return md.render(String(src ?? "")).replace(/\n+$/, "");
+}
+
+// The next render tick, from the last render's cost. The whole growing reply is
+// re-rendered each time, so the cost grows with the reply: a 100 KB prose answer
+// measures ~0.5 s and a hostile-shaped one ~1.3 s, and a fixed 16 ms tick would
+// saturate the main thread. Four times the measured render keeps a few-KB answer
+// at the 16 ms tick, and clamps at 4 s so a pathological reply still redraws
+// while the thread stays free most of the time.
+export function renderTick(ms) {
+  return Math.max(16, Math.min(4000, Math.ceil(4 * ms)));
 }
 
 // Streaming: a growing reply is rendered whole on each call, so the last render

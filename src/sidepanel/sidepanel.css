@@ -677,6 +677,10 @@ body {
 .msg.assistant strong {
   font-weight: var(--os-w-semibold);
 }
+/* An image the panel will not fetch: the marker is quieter than the prose around it. */
+.msg.assistant .md-image {
+  color: var(--os-ink-soft);
+}
 .msg.assistant a {
   color: var(--os-accent-ink);
   /* Colour alone does not tell a link from text, so links are underlined like every
@@ -729,7 +733,9 @@ body {
 .msg.assistant .md-copy:hover {
   background: var(--os-hover);
 }
-.msg.assistant .md-copy:disabled {
+/* aria-disabled, not the disabled attribute: a disabled button cannot keep
+   keyboard focus, and focus has to survive the re-render. */
+.msg.assistant .md-copy[aria-disabled="true"] {
   cursor: default;
   border-color: var(--os-line);
 }

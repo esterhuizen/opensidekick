@@ -2330,11 +2330,11 @@ async function main() {
         const n = v.replace("#", "");
         return `rgb(${parseInt(n.slice(0, 2), 16)}, ${parseInt(n.slice(2, 4), 16)}, ${parseInt(n.slice(4, 6), 16)})`;
       };
-      const out = { label: btn.textContent, color: getComputedStyle(btn).color, want: asRgb(token), state: btn.dataset.state };
+      const out = { label: btn.textContent, color: getComputedStyle(btn).color, want: asRgb(token), aria: btn.getAttribute("aria-label"), state: btn.dataset.state };
       navigator.clipboard.writeText = orig;
       return out;
     }).catch(() => ({ label: "", color: "", want: "" }));
-    check(copyFail.label === "Failed" && copyFail.color === copyFail.want && copyFail.state === "fail", `markdown: a failed copy reads as a failure, not a success (got ${JSON.stringify(copyFail)})`);
+    check(copyFail.label === "Failed" && copyFail.color === copyFail.want && copyFail.aria === "Copy failed" && copyFail.state === "fail", `markdown: a failed copy reads as a failure, not a success (got ${JSON.stringify(copyFail)})`);
 
     // Streaming parity: the streamed DOM equals the one-shot DOM.
     const streamedDone = await panelSend(mdPanel, "Stream markdown please", mdDone);

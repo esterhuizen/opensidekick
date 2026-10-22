@@ -1,6 +1,6 @@
 // Unit suite for the chat renderer. Plain node, no browser, no deps.
 
-import { markdownToHtml, safeHref, createStreamingRenderer, setHighlighter } from "../src/common/markdown.js";
+import { markdownToHtml, safeHref, createStreamingRenderer, renderTick, setHighlighter } from "../src/common/markdown.js";
 import { escapeHtml } from "../src/common/escape.js";
 
 let fail = 0;
@@ -32,6 +32,9 @@ const nested = markdownToHtml("- one\n  - nested");
 ok(nested.includes("<ul>") && count(nested, /<li>/g) === 2 && nested.includes("<li>one\n<ul>"), "nested list renders inside its parent item");
 ok(markdownToHtml("- [ ] todo\n- [x] done").includes('type="checkbox"'), "task list renders checkboxes");
 ok(markdownToHtml("- [x] done").includes("checked"), "a completed task is checked");
+ok(markdownToHtml("- [ ] todo").includes('type="checkbox"') && !markdownToHtml("- [ ] todo").includes("<p>"),
+  "a tight task item gets a checkbox with no unclosed paragraph");
+ok(markdownToHtml("- [ ] a\n\n- [ ] b").includes("<p>"), "a loose task list keeps its paragraphs");
 
 // ---- blockquote, rule ----
 ok(markdownToHtml("> quoted").includes("<blockquote>") && markdownToHtml("> quoted").includes("quoted"), "blockquote renders");
@@ -87,7 +90,13 @@ ok(markdownToHtml("[x][ref]\n\n[ref]: https://a.b/c").includes("<a"), "a referen
 
 // ---- images: alt text only, no network destination ----
 ok(!markdownToHtml("![d](https://evil.example/i.png)").includes("<img"), "an image never becomes an <img>");
-ok(markdownToHtml("and ![d](https://a.b/i.png) x").includes("and d x"), "an image renders as its alt text inside a sentence");
+ok(markdownToHtml("and ![d](https://a.b/i.png) x").includes("[image: d]"), "an image marks its alt text inside a sentence");
+ok(markdownToHtml("![](https://a.b/i.png)").includes("[image]"), "an empty alt still leaves the marker");
+ok(markdownToHtml("![a **b**](https://a.b/i.png)").includes("[image: a b]"), "alt markup is dropped, not printed raw");
+const altLink = markdownToHtml("![see [b](https://x.y/z)](https://a.b/i.png)");
+ok(altLink.includes("[image: see b]") && !altLink.includes("<a"), "a link inside the alt stays plain text, not a link the reader never saw");
+ok(markdownToHtml("![a\nb](https://a.b/i.png)").includes("[image: a b]"), "a newline in the alt is a space, not a word join");
+ok(markdownToHtml("![a **b** c*](https://a.b/i.png)").includes("[image: a b c*]"), "the whitelist drops only what markdown-it recognised, so an unmatched marker prints as text");
 
 // ---- raw HTML is inert ----
 ok(!markdownToHtml("<div>raw</div>").includes("<div>"), "raw HTML is escaped, not injected");
@@ -141,10 +150,17 @@ const sample = [
 
 for (const size of [1, 3, 7, 16, 40]) {
   const r = createStreamingRenderer();
+  const steps = Math.ceil(sample.length / size);
+  const marks = [Math.ceil(steps / 4), Math.ceil(steps / 2), Math.ceil((3 * steps) / 4)];
   let html = "";
-  for (let i = 0; i < sample.length; i += size) {
-    r.append(sample.slice(i, i + size));
+  for (let step = 1; step <= steps; step++) {
+    r.append(sample.slice((step - 1) * size, step * size));
     html = r.render();
+    // A mid-stream DOM is checked, not just the last one: that is the DOM the
+    // panel shows partway through a reply.
+    if (marks.includes(step)) {
+      eq(html, markdownToHtml(sample.slice(0, step * size)), `streaming at ${size}-byte chunks renders the text sent so far (step ${step}/${steps})`);
+    }
   }
   eq(html, markdownToHtml(sample), `streaming at ${size}-byte chunks ends at the one-shot render`);
 }
@@ -167,6 +183,13 @@ const mid = r.render();
 r.append(sample.slice(20));
 eq(r.finalize(sample), markdownToHtml(sample), "finalize(full text) equals the one-shot render");
 ok(mid !== markdownToHtml(sample), "a partial stream renders a partial reply");
+
+// ---- render cadence ----
+eq(renderTick(2), 16, "a few-millisecond render keeps the 16 ms tick");
+eq(renderTick(10), 40, "the next tick is four times the last render");
+eq(renderTick(125), 500, "a 125 ms render slows the stream to half a second");
+eq(renderTick(500), 2000, "a 0.5 s render of a 100 KB reply gives the thread two seconds");
+eq(renderTick(1300), 4000, "the tick clamps at 4 s, so a hostile reply still redraws");
 
 console.log(fail ? `\n${fail} MARKDOWN CHECK(S) FAILED` : "\nALL MARKDOWN CHECKS PASSED");
 process.exit(fail ? 1 : 0);
