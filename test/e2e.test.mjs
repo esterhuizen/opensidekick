@@ -115,6 +115,17 @@ const SECOND_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Oth
 let BASE1 = ""; // first server base URL, set in main()
 let BASE2 = ""; // second server (different origin), set in main()
 
+// Every construct the side panel must draw, plus the destinations it must refuse.
+// The harness renders it too, so the streamed DOM can be checked against the
+// render of the exact prefix the mock sent.
+const MD_ANSWER =
+  "## Findings\n1. first\n2. second\n3. third\n\n- one\n  - nested\n\n" +
+  "| Site | Status |\n| --- | --- |\n| acme | ok |\n| beta | down |\n\n" +
+  "> quoted note\n\n~~strikethrough~~\n\n```js\nconst x = 1;\n```\n\n" +
+  "```notalanguage\nplain 2 + 2\n```\n\n" +
+  "![diagram](https://example.com/i.png) and [relative](/docs) and [safe](https://a.b/c)\n\n" +
+  "Photo: https://example.org/files/my_report_v2.png";
+
 // --- Mock model: scripts multi-step agentic tasks over the tool protocol. ---
 function decide(messages) {
   const firstUser = (messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase();
@@ -136,14 +147,6 @@ function decide(messages) {
   // be poked mid-run (the model-switch note must wait for the run to end).
   if (/hold your reply/.test(lastUser)) return { kind: "text", text: "Holding on... done holding.", stallMs: 2500 };
 
-  // Every construct the side panel must draw, plus the destinations it must refuse.
-  const MD_ANSWER =
-    "## Findings\n1. first\n2. second\n3. third\n\n- one\n  - nested\n\n" +
-    "| Site | Status |\n| --- | --- |\n| acme | ok |\n| beta | down |\n\n" +
-    "> quoted note\n\n~~strikethrough~~\n\n```js\nconst x = 1;\n```\n\n" +
-    "```notalanguage\nplain 2 + 2\n```\n\n" +
-    "![diagram](https://example.com/i.png) and [relative](/docs) and [safe](https://a.b/c)\n\n" +
-    "Photo: https://example.org/files/my_report_v2.png";
   if (/format the answer as markdown/.test(lastUser)) return { kind: "text", text: MD_ANSWER };
   // The same answer, streamed, so the streamed DOM can be compared with the one-shot DOM.
   if (/stream markdown/.test(lastUser)) return { kind: "text", text: MD_ANSWER, stallMs: 1200 };
@@ -2194,8 +2197,196 @@ async function main() {
     check(/allowed/.test(chipText2) && !/not allowed yet/.test(chipText2), `site-chip: chip reflects the new rule (got "${chipText2}")`);
     await chipPanel.close();
 
-    // Restore the standard config for the remaining tests.
+    // --- Markdown rendering in the chat transcript ---
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);
+    const mdPanel = await context.newPage();
+    await mdPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+    await mdPanel.waitForTimeout(400);
+    await mdPanel.click("#new-chat");
+    await mdPanel.waitForTimeout(300);
+    const mdProbe = (pg) =>
+      pg
+        .$$eval(".msg.assistant", (els) => {
+          const last = els[els.length - 1];
+          return {
+            html: last.innerHTML,
+            h2: [...last.querySelectorAll("h2")].map((e) => e.textContent),
+            olItems: last.querySelectorAll("ol > li").length,
+            nested: last.querySelectorAll("li ul li").length,
+            tableRows: last.querySelectorAll("table tbody tr").length,
+            tableHead: [...last.querySelectorAll("th")].map((e) => e.textContent).join(","),
+            quote: [...last.querySelectorAll("blockquote")].map((e) => e.textContent.trim()),
+            del: [...last.querySelectorAll("s, del")].map((e) => e.textContent),
+            codeLang: [...last.querySelectorAll(".md-code-lang")].map((e) => e.textContent),
+            codeText: [...last.querySelectorAll("pre code")].map((e) => e.textContent),
+            tokens: last.querySelectorAll(".md-code pre code .token").length,
+            plainTokens: [...last.querySelectorAll(".md-code")].filter((d) => d.textContent.includes("plain 2 + 2")).map((d) => d.querySelectorAll(".token").length),
+            links: [...last.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+            imgs: last.querySelectorAll("img").length,
+            copyLabels: [...last.querySelectorAll(".md-copy")].map((b) => b.textContent),
+            copyAria: [...last.querySelectorAll(".md-copy")].map((b) => b.getAttribute("aria-label")),
+            copyDisabled: [...last.querySelectorAll(".md-copy")].map((b) => b.getAttribute("aria-disabled") === "true"),
+            focusCopy: document.activeElement.classList.contains("md-copy"),
+            text: last.textContent,
+          };
+        })
+        .catch(() => null);
+    const md0 = await mdPanel.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+    const mdDone = await panelSend(mdPanel, "Format the answer as markdown", md0);
+    check(mdDone > 0, "markdown: the markdown turn completed");
+    const md = await mdProbe(mdPanel);
+    check(md && md.h2.includes("Findings"), `markdown: heading renders as h2 (got ${JSON.stringify(md && md.h2)})`);
+    check(md && md.olItems === 3, `markdown: ordered list renders 3 items (got ${md && md.olItems})`);
+    check(md && md.nested === 1, `markdown: nested list renders inside its parent item (got ${md && md.nested})`);
+    check(md && md.tableRows === 2 && md.tableHead === "Site,Status", `markdown: table renders its header and 2 rows (got ${JSON.stringify(md && [md.tableHead, md.tableRows])})`);
+    check(md && md.quote.includes("quoted note"), `markdown: blockquote renders (got ${JSON.stringify(md && md.quote)})`);
+    check(md && md.del.includes("strikethrough"), `markdown: strikethrough renders (got ${JSON.stringify(md && md.del)})`);
+    check(md && md.codeLang.includes("js") && md.codeText[0] === "const x = 1;", `markdown: fence language is a label, not code (got ${JSON.stringify(md && [md.codeLang, md.codeText])})`);
+    check(md && md.tokens > 0, `markdown: a known language highlights tokens (got ${md && md.tokens})`);
+    check(md && md.plainTokens.length === 1 && md.plainTokens[0] === 0, `markdown: an unknown language renders plain text (got ${JSON.stringify(md && md.plainTokens)})`);
+    check(md && md.imgs === 0, `markdown: an image never becomes an <img> (got ${md && md.imgs})`);
+    check(md && md.links.length === 2 && md.links[0].startsWith("https://a.b"), `markdown: only absolute links are anchors (got ${JSON.stringify(md && md.links)})`);
+    check(md && md.links.some((h) => h === "https://example.org/files/my_report_v2.png"),
+      `markdown: a bare URL keeps its underscores (got ${JSON.stringify(md && md.links)})`);
+    // Colour alone is not a link, so the underline is the visible signal.
+    const linkStyle = await mdPanel.evaluate(() => {
+      const a = [...document.querySelectorAll(".msg.assistant a")].pop();
+      return a ? { line: getComputedStyle(a)["text-decoration-line"], offset: getComputedStyle(a)["text-underline-offset"] } : null;
+    }).catch(() => null);
+    check(linkStyle && linkStyle.line === "underline", `markdown: links are underlined, not colour only (got ${JSON.stringify(linkStyle)})`);
+    check(md && !/##|\| |~~|> quoted/.test(md.text), `markdown: no literal markdown syntax leaks into the text (got "${md && md.text.slice(0, 50)}")`);
+    check(md && md.text.includes("[image: diagram]"), `markdown: a dropped image is marked with its alt (got ${JSON.stringify(md && md.text.slice(120, 170))})`);
+
+    // The copy control hands the fence's code to the clipboard.
+    const copied = await mdPanel.evaluate(async () => {
+      const btn = document.querySelector(".md-copy");
+      if (!btn) return "no button";
+      const seen = [];
+      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = (t) => {
+        seen.push(t);
+        return orig(t);
+      };
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      navigator.clipboard.writeText = orig;
+      return seen[0] || "";
+    }).catch(() => "");
+    check(copied === "const x = 1;", `markdown: the copy control copies the fence code (got ${JSON.stringify(copied)})`);
+
+    // Failed is not good news, so it must not be drawn in the success green. The
+    // colour is read from the theme's own token, so the check follows the theme.
+    const copyFail = await mdPanel.evaluate(async () => {
+      const btn = document.querySelector(".md-copy");
+      if (!btn) return { label: "no button", color: "", want: "" };
+      await new Promise((r) => setTimeout(r, 1000)); // the feedback window holds the control for 1 s
+      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      const token = getComputedStyle(document.documentElement).getPropertyValue("--os-bad-ink").trim();
+      const asRgb = (v) => {
+        if (!v.startsWith("#")) return v;
+        const n = v.replace("#", "");
+        return `rgb(${parseInt(n.slice(0, 2), 16)}, ${parseInt(n.slice(2, 4), 16)}, ${parseInt(n.slice(4, 6), 16)})`;
+      };
+      const out = { label: btn.textContent, color: getComputedStyle(btn).color, want: asRgb(token), aria: btn.getAttribute("aria-label"), state: btn.dataset.state };
+      navigator.clipboard.writeText = orig;
+      return out;
+    }).catch(() => ({ label: "", color: "", want: "" }));
+    check(copyFail.label === "Failed" && copyFail.color === copyFail.want && copyFail.aria === "Copy failed" && copyFail.state === "fail", `markdown: a failed copy reads as a failure, not a success (got ${JSON.stringify(copyFail)})`);
+
+    // The parity checks say where the DOMs part, not just that they differ.
+    const domDiff = (a, b) => {
+      if (a === b) return "equal";
+      if (!a || !b) return "missing";
+      let i = 0;
+      while (i < a.length && a[i] === b[i]) i++;
+      return `differ at ${i}: panel "${a.slice(i, i + 50)}" expected "${b.slice(i, i + 50)}"`;
+    };
+
+    // Streaming parity, in two parts. Mid-stream, the DOM must be the render of the
+    // text sent so far: the mock sends the first half, then stalls 1200 ms, so the
+    // probe lands inside that window. At the end, the DOM must be the one-shot DOM.
+    const startStreamTurn = async (prev) => {
+      await mdPanel.fill("#input", "Stream markdown please");
+      await testPage.bringToFront();
+      await mdPanel.click("#send-btn");
+      await mdPanel
+        .waitForFunction(
+          (n) => {
+            const a = document.querySelectorAll(".msg.assistant");
+            return a.length > n && a[a.length - 1].querySelector("h2") !== null;
+          },
+          prev,
+          { timeout: 5000 },
+        )
+        .catch(() => {});
+    };
+
+    const streamBase = await mdPanel.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+    await startStreamTurn(streamBase);
+    const midStream = await mdProbe(mdPanel);
+    const midPrefix = MD_ANSWER.slice(0, Math.ceil(MD_ANSWER.length / 2)); // the split the mock sends at
+    // The expected DOM comes from the panel's own renderer, so Prism's highlighting
+    // is part of it, and it is normalized through a detached div so the comparison
+    // is DOM-to-DOM, not a string against a serialization.
+    const expectedMid = await mdPanel.evaluate(async (s) => {
+      const m = await import(new URL("../common/markdown.js", location.href).href);
+      const d = document.createElement("div");
+      d.innerHTML = m.markdownToHtml(s);
+      return d.innerHTML;
+    }, midPrefix);
+    check(midStream && midStream.html === expectedMid, `markdown: the mid-stream DOM is the render of the text sent so far (${domDiff(midStream && midStream.html, expectedMid)})`);
+    const streamedDone = await panelIdle(mdPanel, streamBase);
+    check(streamedDone > streamBase, "markdown: the streamed markdown turn completed");
+    const streamed = await mdProbe(mdPanel);
+    const oneShot = await panelSend(mdPanel, "Format the answer as markdown", streamedDone);
+    check(oneShot > streamedDone, "markdown: the single-shot markdown turn completed");
+    const final = await mdProbe(mdPanel);
+    check(streamed.html === final.html, `markdown: streamed DOM equals the one-shot DOM (${domDiff(streamed && streamed.html, final && final.html)})`);
+
+    // A second stream turn, for the copy control. It is kept apart from the parity
+    // turn because the copy label is part of the DOM the parity check compares. The
+    // click lands ~700 ms into the 1200 ms stall, so the next chunk's re-render
+    // falls inside the 1 s feedback window.
+    const copyBase = await mdPanel.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
+    await startStreamTurn(copyBase);
+    await mdPanel.waitForTimeout(700);
+    const copyMid = await mdPanel.evaluate(async () => {
+      const last = [...document.querySelectorAll(".msg.assistant")].pop();
+      const btn = last.querySelector(".md-copy");
+      if (!btn) return null;
+      btn.focus();
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      return { label: btn.textContent, aria: btn.getAttribute("aria-label") };
+    }).catch(() => null);
+    check(copyMid && copyMid.label === "Copied" && copyMid.aria === "Copied code", `markdown: a copy on a streaming message labels itself (got ${JSON.stringify(copyMid)})`);
+    const copyDone = await panelIdle(mdPanel, copyBase);
+    check(copyDone > copyBase, "markdown: the copy stream turn completed");
+    const afterCopy = await mdProbe(mdPanel);
+    // The message has several fences, so only the clicked control carries feedback;
+    // the rest correctly read Copy. Index 0 is the one clicked.
+    check(afterCopy && afterCopy.copyLabels[0] === "Copied", `markdown: the copy label survives the re-render (got ${JSON.stringify(afterCopy && afterCopy.copyLabels)})`);
+    check(afterCopy && afterCopy.copyAria[0] === "Copied code" && afterCopy.copyDisabled[0], `markdown: the surviving label says so to a screen reader too (got ${JSON.stringify(afterCopy && [afterCopy.copyAria, afterCopy.copyDisabled])})`);
+    check(afterCopy && afterCopy.focusCopy, `markdown: the keyboard focus survives the re-render (got ${JSON.stringify(afterCopy && afterCopy.focusCopy)})`);
+    // The label is feedback, not a state, so it has to go back on its own. It has to
+    // go back on the button that is live now: the one clicked was detached by the
+    // re-render, and a reset that writes it leaves the live control stuck on Copied.
+    await mdPanel.waitForTimeout(1100);
+    const afterReset = await mdProbe(mdPanel);
+    check(afterReset && afterReset.copyLabels.every((l) => l === "Copy") && afterReset.copyAria.every((a) => a === "Copy code") && afterReset.copyDisabled.every((d) => !d), `markdown: the copy feedback resets on the live control (got ${JSON.stringify(afterReset && [afterReset.copyLabels, afterReset.copyAria, afterReset.copyDisabled])})`);
+    const reCopy = await mdPanel.evaluate(async () => {
+      const last = [...document.querySelectorAll(".msg.assistant")].pop();
+      const btn = last.querySelector(".md-copy");
+      if (!btn) return "no button";
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      return btn.textContent;
+    }).catch(() => "");
+    check(reCopy === "Copied", `markdown: the control copies again once the feedback ends (got ${JSON.stringify(reCopy)})`);
+    await mdPanel.close();
 
     // --- First-run / unconfigured (keep these LAST; they wipe the provider) ---
     // (1) An unconfigured run must emit error AND idle so the panel doesn't stick.
@@ -2242,109 +2433,6 @@ async function main() {
     check(activeAfter === "auto", `autonomy: the Auto segment becomes active (got "${activeAfter}")`);
     await gatePanel.close();
 
-    // --- Markdown rendering in the chat transcript ---
-    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);
-    const mdPanel = await context.newPage();
-    await mdPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
-    await mdPanel.waitForTimeout(400);
-    await mdPanel.click("#new-chat");
-    await mdPanel.waitForTimeout(300);
-    const mdProbe = (pg) =>
-      pg
-        .$$eval(".msg.assistant", (els) => {
-          const last = els[els.length - 1];
-          return {
-            html: last.innerHTML,
-            h2: [...last.querySelectorAll("h2")].map((e) => e.textContent),
-            olItems: last.querySelectorAll("ol > li").length,
-            nested: last.querySelectorAll("li ul li").length,
-            tableRows: last.querySelectorAll("table tbody tr").length,
-            tableHead: [...last.querySelectorAll("th")].map((e) => e.textContent).join(","),
-            quote: [...last.querySelectorAll("blockquote")].map((e) => e.textContent.trim()),
-            del: [...last.querySelectorAll("s, del")].map((e) => e.textContent),
-            codeLang: [...last.querySelectorAll(".md-code-lang")].map((e) => e.textContent),
-            codeText: [...last.querySelectorAll("pre code")].map((e) => e.textContent),
-            tokens: last.querySelectorAll(".md-code pre code .token").length,
-            plainTokens: [...last.querySelectorAll(".md-code")].filter((d) => d.textContent.includes("plain 2 + 2")).map((d) => d.querySelectorAll(".token").length),
-            links: [...last.querySelectorAll("a")].map((a) => a.getAttribute("href")),
-            imgs: last.querySelectorAll("img").length,
-            text: last.textContent,
-          };
-        })
-        .catch(() => null);
-    const md0 = await mdPanel.$$eval(".msg.assistant", (n) => n.length).catch(() => 0);
-    const mdDone = await panelSend(mdPanel, "Format the answer as markdown", md0);
-    check(mdDone > 0, "markdown: the markdown turn completed");
-    const md = await mdProbe(mdPanel);
-    check(md && md.h2.includes("Findings"), `markdown: heading renders as h2 (got ${JSON.stringify(md && md.h2)})`);
-    check(md && md.olItems === 3, `markdown: ordered list renders 3 items (got ${md && md.olItems})`);
-    check(md && md.nested === 1, `markdown: nested list renders inside its parent item (got ${md && md.nested})`);
-    check(md && md.tableRows === 2 && md.tableHead === "Site,Status", `markdown: table renders its header and 2 rows (got ${JSON.stringify(md && [md.tableHead, md.tableRows])})`);
-    check(md && md.quote.includes("quoted note"), `markdown: blockquote renders (got ${JSON.stringify(md && md.quote)})`);
-    check(md && md.del.includes("strikethrough"), `markdown: strikethrough renders (got ${JSON.stringify(md && md.del)})`);
-    check(md && md.codeLang.includes("js") && md.codeText[0] === "const x = 1;", `markdown: fence language is a label, not code (got ${JSON.stringify(md && [md.codeLang, md.codeText])})`);
-    check(md && md.tokens > 0, `markdown: a known language highlights tokens (got ${md && md.tokens})`);
-    check(md && md.plainTokens.length === 1 && md.plainTokens[0] === 0, `markdown: an unknown language renders plain text (got ${JSON.stringify(md && md.plainTokens)})`);
-    check(md && md.imgs === 0, `markdown: an image never becomes an <img> (got ${md && md.imgs})`);
-    check(md && md.links.length === 2 && md.links[0].startsWith("https://a.b"), `markdown: only absolute links are anchors (got ${JSON.stringify(md && md.links)})`);
-    check(md && md.links.some((h) => h === "https://example.org/files/my_report_v2.png"),
-      `markdown: a bare URL keeps its underscores (got ${JSON.stringify(md && md.links)})`);
-    // Colour alone is not a link, so the underline is the visible signal.
-    const linkStyle = await mdPanel.evaluate(() => {
-      const a = [...document.querySelectorAll(".msg.assistant a")].pop();
-      return a ? { line: getComputedStyle(a)["text-decoration-line"], offset: getComputedStyle(a)["text-underline-offset"] } : null;
-    }).catch(() => null);
-    check(linkStyle && linkStyle.line === "underline", `markdown: links are underlined, not colour only (got ${JSON.stringify(linkStyle)})`);
-    check(md && !/##|\| |~~|> quoted/.test(md.text), `markdown: no literal markdown syntax leaks into the text (got "${md && md.text.slice(0, 50)}")`);
-
-    // The copy control hands the fence's code to the clipboard.
-    const copied = await mdPanel.evaluate(async () => {
-      const btn = document.querySelector(".md-copy");
-      if (!btn) return "no button";
-      const seen = [];
-      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
-      navigator.clipboard.writeText = (t) => {
-        seen.push(t);
-        return orig(t);
-      };
-      btn.click();
-      await new Promise((r) => setTimeout(r, 120));
-      navigator.clipboard.writeText = orig;
-      return seen[0] || "";
-    }).catch(() => "");
-    check(copied === "const x = 1;", `markdown: the copy control copies the fence code (got ${JSON.stringify(copied)})`);
-
-    // Failed is not good news, so it must not be drawn in the success green. The
-    // colour is read from the theme's own token, so the check follows the theme.
-    const copyFail = await mdPanel.evaluate(async () => {
-      const btn = document.querySelector(".md-copy");
-      if (!btn) return { label: "no button", color: "", want: "" };
-      await new Promise((r) => setTimeout(r, 1000)); // the feedback window holds the control for 1 s
-      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
-      navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
-      btn.click();
-      await new Promise((r) => setTimeout(r, 120));
-      const token = getComputedStyle(document.documentElement).getPropertyValue("--os-bad-ink").trim();
-      const asRgb = (v) => {
-        if (!v.startsWith("#")) return v;
-        const n = v.replace("#", "");
-        return `rgb(${parseInt(n.slice(0, 2), 16)}, ${parseInt(n.slice(2, 4), 16)}, ${parseInt(n.slice(4, 6), 16)})`;
-      };
-      const out = { label: btn.textContent, color: getComputedStyle(btn).color, want: asRgb(token), aria: btn.getAttribute("aria-label"), state: btn.dataset.state };
-      navigator.clipboard.writeText = orig;
-      return out;
-    }).catch(() => ({ label: "", color: "", want: "" }));
-    check(copyFail.label === "Failed" && copyFail.color === copyFail.want && copyFail.aria === "Copy failed" && copyFail.state === "fail", `markdown: a failed copy reads as a failure, not a success (got ${JSON.stringify(copyFail)})`);
-
-    // Streaming parity: the streamed DOM equals the one-shot DOM.
-    const streamedDone = await panelSend(mdPanel, "Stream markdown please", mdDone);
-    check(streamedDone > mdDone, "markdown: the streamed markdown turn completed");
-    const streamed = await mdProbe(mdPanel);
-    const oneShot = await panelSend(mdPanel, "Format the answer as markdown", streamedDone);
-    check(oneShot > streamedDone, "markdown: the single-shot markdown turn completed");
-    const final = await mdProbe(mdPanel);
-    check(streamed.html === final.html, `markdown: streamed DOM equals the single-shot DOM (${streamed && final ? (streamed.html === final.html ? "equal" : "differ") : "missing"})`);
-    await mdPanel.close();
   } finally {
     server2.close();
     await context.close();
