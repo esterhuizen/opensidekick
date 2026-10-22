@@ -20,7 +20,7 @@ eq(markdownToHtml("###### F"), "<h6>F</h6>", "level 6 heading renders as h6");
 ok(!markdownToHtml("# A").includes("#"), "the heading marker does not print");
 
 // ---- paragraphs and breaks ----
-eq(markdownToHtml("a\nb"), "<p>a\nb</p>", "a single newline is a soft break");
+eq(markdownToHtml("a\nb"), "<p>a<br>\nb</p>", "a single newline renders as a line break");
 ok(markdownToHtml("a  \nb").includes("<br>"), "two trailing spaces make a hard break");
 
 // ---- lists ----
@@ -77,7 +77,9 @@ ok(!markdownToHtml("[x](/docs)").includes("<a"), "a relative destination renders
 ok(!markdownToHtml("[x](javascript:alert(1))").includes("<a"), "a javascript: destination renders as inert text");
 ok(markdownToHtml("[x](mailto:a@b.c)").includes("<a"), "a mailto destination renders as an anchor");
 ok(markdownToHtml("See https://a.b/c now").includes("<a"), "a bare URL with a scheme is autolinked");
-ok(markdownToHtml("See www.example.com now").includes("<a"), "a bare domain is autolinked");
+ok(!markdownToHtml("See www.example.com now").includes("<a"), "a bare domain is not autolinked — fuzzyLink is off");
+ok(!markdownToHtml("edit setup.py and README.md, main.rs").includes("<a"), "filenames are not invented into domains");
+ok(markdownToHtml("Mail user@example.com").includes('<a href="mailto:user@example.com"'), "a bare email is a mailto link — fuzzyEmail is on");
 eq(markdownToHtml("Front: https://example.org/files/my_report_v2.png"),
   '<p>Front: <a href="https://example.org/files/my_report_v2.png" target="_blank" rel="noopener noreferrer">https://example.org/files/my_report_v2.png</a></p>',
   "a bare URL keeps its underscores — a filename is not cut at the first one");
@@ -113,7 +115,7 @@ eq(safeHref("Aimailto:x"), null, "safeHref rejects a string that only contains m
 
 // ---- input shapes ----
 eq(markdownToHtml(""), "", "empty input renders nothing");
-ok(markdownToHtml("a\r\nb\r\n").includes("a\nb"), "CRLF input is handled");
+eq(markdownToHtml("a\r\nb\r\n"), "<p>a<br>\nb</p>", "CRLF input is handled");
 
 // ---- streaming: the DOM after a chunked stream equals the one-shot render ----
 const sample = [

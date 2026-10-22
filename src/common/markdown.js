@@ -31,14 +31,23 @@ export function safeHref(url) {
   }
 }
 
-// The allowlist: a destination that fails here stays literal text.
-const validateLink = (url) => safeHref(url) !== null;
+// breaks: true. The chat used to emit <br> for a single newline, and replies rely
+// on it — a model writes "line one\nline two" as two lines, not one. The panel
+// sets white-space: normal, so the renderer owns whitespace.
+const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true });
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: false, validateLink });
+// markdown-it reads md.validateLink, the prototype method, not a constructor
+// option, so the allowlist goes there. Inline links, reference definitions,
+// autolinks, and linkify all ask it before they emit a destination, which leaves
+// no second place to check.
+md.validateLink = (url) => safeHref(url) !== null;
 
-// linkify matches a URL with a scheme only; fuzzy matching adds the bare domains
-// a model writes, and the destination still goes through validateLink.
-md.linkify.set({ fuzzyLink: true });
+// The linkify flags, left as upstream ships them. fuzzyLink stays off: a bare
+// domain is a guess, so setup.py and README.md — filenames a model writes — become
+// links to http://setup.py and http://README.md, invented from two-letter TLDs.
+// fuzzyEmail stays on: mailto: is in the allowlist, so a bare email in a reply is
+// a clickable mailto link, and a click goes through the browser's mail handler.
+// The panel's only network destination is still the user's provider.
 
 // A code fence gets a banner naming its language, so the language is not the
 // code's first line, and a Copy control. The copy handler lives in the side panel.
@@ -82,28 +91,14 @@ md.renderer.rules.paragraph_open = (tokens, idx, options, env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 
-// markdown-it validates a destination for linkify, not for an inline link, so
-// the allowlist is enforced where the anchor is emitted. A rejected destination
-// renders as the label's plain text: the opening tag becomes a span, and
-// link_close matches it.
+// validateLink has already allowlisted the destination, so this rule only adds
+// what a chat panel needs: the link opens in its own tab, with no handle from the
+// opened page back into the panel.
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-  const href = safeHref(tokens[idx].attrGet("href"));
-  if (!href) {
-    tokens[idx].tag = "span";
-    tokens[idx].attrs = [];
-    return self.renderToken(tokens, idx, options);
-  }
-  tokens[idx].attrSet("href", href);
+  tokens[idx].attrSet("href", safeHref(tokens[idx].attrGet("href")));
   tokens[idx].attrSet("target", "_blank");
   tokens[idx].attrSet("rel", "noopener noreferrer");
   return self.renderToken(tokens, idx, options);
-};
-
-md.renderer.rules.link_close = (tokens, idx) => {
-  for (let k = idx - 1; k >= 0; k--) {
-    if (tokens[k].type === "link_open") return tokens[k].tag === "span" ? "</span>" : "</a>";
-  }
-  return "</a>";
 };
 
 export function markdownToHtml(src) {
