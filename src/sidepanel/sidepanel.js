@@ -142,18 +142,20 @@ async function init() {
     if (!btn) return;
     const pre = btn.closest(`.${CODE_CLASS}`)?.querySelector("pre");
     if (!pre) return;
-    const setLabel = (label) => {
+    const setLabel = (label, state) => {
       btn.textContent = label;
       btn.disabled = true;
+      btn.dataset.state = state;
       setTimeout(() => {
         btn.textContent = "Copy";
         btn.disabled = false;
+        delete btn.dataset.state;
       }, 1000);
     };
     navigator.clipboard
       .writeText(pre.textContent)
-      .then(() => setLabel("Copied"))
-      .catch(() => setLabel("Failed"));
+      .then(() => setLabel("Copied", "ok"))
+      .catch(() => setLabel("Failed", "fail"));
   });
   els.jumpLatest.addEventListener("click", () => {
     pinned = true;

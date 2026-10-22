@@ -2289,6 +2289,12 @@ async function main() {
     check(md && md.links.length === 2 && md.links[0].startsWith("https://a.b"), `markdown: only absolute links are anchors (got ${JSON.stringify(md && md.links)})`);
     check(md && md.links.some((h) => h === "https://example.org/files/my_report_v2.png"),
       `markdown: a bare URL keeps its underscores (got ${JSON.stringify(md && md.links)})`);
+    // Colour alone is not a link, so the underline is the visible signal.
+    const linkStyle = await mdPanel.evaluate(() => {
+      const a = [...document.querySelectorAll(".msg.assistant a")].pop();
+      return a ? { line: getComputedStyle(a)["text-decoration-line"], offset: getComputedStyle(a)["text-underline-offset"] } : null;
+    }).catch(() => null);
+    check(linkStyle && linkStyle.line === "underline", `markdown: links are underlined, not colour only (got ${JSON.stringify(linkStyle)})`);
     check(md && !/##|\| |~~|> quoted/.test(md.text), `markdown: no literal markdown syntax leaks into the text (got "${md && md.text.slice(0, 50)}")`);
 
     // The copy control hands the fence's code to the clipboard.
@@ -2307,6 +2313,28 @@ async function main() {
       return seen[0] || "";
     }).catch(() => "");
     check(copied === "const x = 1;", `markdown: the copy control copies the fence code (got ${JSON.stringify(copied)})`);
+
+    // Failed is not good news, so it must not be drawn in the success green. The
+    // colour is read from the theme's own token, so the check follows the theme.
+    const copyFail = await mdPanel.evaluate(async () => {
+      const btn = document.querySelector(".md-copy");
+      if (!btn) return { label: "no button", color: "", want: "" };
+      await new Promise((r) => setTimeout(r, 1000)); // the feedback window holds the control for 1 s
+      const orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      const token = getComputedStyle(document.documentElement).getPropertyValue("--os-bad-ink").trim();
+      const asRgb = (v) => {
+        if (!v.startsWith("#")) return v;
+        const n = v.replace("#", "");
+        return `rgb(${parseInt(n.slice(0, 2), 16)}, ${parseInt(n.slice(2, 4), 16)}, ${parseInt(n.slice(4, 6), 16)})`;
+      };
+      const out = { label: btn.textContent, color: getComputedStyle(btn).color, want: asRgb(token), state: btn.dataset.state };
+      navigator.clipboard.writeText = orig;
+      return out;
+    }).catch(() => ({ label: "", color: "", want: "" }));
+    check(copyFail.label === "Failed" && copyFail.color === copyFail.want && copyFail.state === "fail", `markdown: a failed copy reads as a failure, not a success (got ${JSON.stringify(copyFail)})`);
 
     // Streaming parity: the streamed DOM equals the one-shot DOM.
     const streamedDone = await panelSend(mdPanel, "Stream markdown please", mdDone);

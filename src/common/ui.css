@@ -53,13 +53,14 @@
   --os-bad-ink: #b91c1c;
   --os-bad-soft: #fdeceb;
 
-  /* Code tokens: Prism's classes map onto these seven. */
+  /* Code tokens: Prism's classes map onto these seven, measured against
+     --os-surface (the code frame's fill) in both themes. */
   --os-tok-comment: #046a09;
   --os-tok-key: #990077;
-  --os-tok-string: #669900;
+  --os-tok-string: #4a7100;
   --os-tok-number: #ae00a1;
-  --os-tok-func: #cc9966;
-  --os-tok-punct: #9a7e4a;
+  --os-tok-func: #8a5a2f;
+  --os-tok-punct: #756042;
   --os-tok-tag: #b16;
 
   /* Shape */

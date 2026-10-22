@@ -679,15 +679,10 @@ body {
 }
 .msg.assistant a {
   color: var(--os-accent-ink);
-  text-decoration: none;
-}
-.msg.assistant a:hover {
+  /* Colour alone does not tell a link from text, so links are underlined like every
+     other link in the UI. Focus is the panel's standard :focus-visible outline. */
   text-decoration: underline;
-}
-.msg.assistant a:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--os-accent-ring);
-  border-radius: var(--os-r-sm);
+  text-underline-offset: 2px;
 }
 .msg.assistant code {
   font-family: var(--os-mono);
@@ -734,14 +729,17 @@ body {
 .msg.assistant .md-copy:hover {
   background: var(--os-hover);
 }
-.msg.assistant .md-copy:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--os-accent-ring);
-}
 .msg.assistant .md-copy:disabled {
   cursor: default;
-  color: var(--os-good-ink);
   border-color: var(--os-line);
+}
+/* Copied is good news and Failed is not, so they get their own colours: the
+   disabled state used to be drawn in the success green for both. */
+.msg.assistant .md-copy[data-state="ok"] {
+  color: var(--os-good-ink);
+}
+.msg.assistant .md-copy[data-state="fail"] {
+  color: var(--os-bad-ink);
 }
 .msg.assistant .md-code pre {
   margin: 0;
@@ -754,9 +752,10 @@ body {
   overflow-x: auto;
   white-space: pre;
 }
+/* The code frame clips an outward ring (overflow: hidden), so the standard
+   2px accent outline sits inside the scrollport instead. */
 .msg.assistant .md-code pre:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--os-accent-ring);
+  outline-offset: -2px;
 }
 .msg.assistant .md-code pre code {
   background: none;
@@ -818,10 +817,6 @@ body {
   border: 1px solid var(--os-line);
   border-radius: var(--os-r);
   background: var(--os-surface);
-}
-.msg.assistant .md-table:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--os-accent-ring);
 }
 .msg.assistant table {
   border-collapse: collapse;
