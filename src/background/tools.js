@@ -366,8 +366,9 @@ async function csSend(tabId, msg) {
     return {
       ok: false,
       error:
-        "Could not reach the page. It may be a restricted page (chrome://, the " +
-        "Chrome Web Store, or a PDF), or it navigated away.",
+        "Could not reach the page. It may be a restricted page (chrome://, about: " +
+        "pages, the browser's own extensions or add-ons store, or a PDF), or it " +
+        "navigated away.",
     };
   }
 }

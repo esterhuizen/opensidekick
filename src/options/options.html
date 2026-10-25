@@ -188,10 +188,10 @@
 
           <div class="field">
             <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="chip warn">debugger banner</span></label>
-            <p class="hint">Adds read_console and read_network for debugging pages.</p>
+            <p class="hint" id="cdp-hint">Adds read_console and read_network for debugging pages.</p>
             <details class="more">
               <summary>Learn more</summary>
-              <p class="hint">Adds read_console / read_network tools for debugging pages, via Chrome’s debugger. Chrome shows a “debugging this browser” banner while a task runs; it clears when the task ends.</p>
+              <p class="hint">Adds read_console / read_network tools for debugging pages, via the browser's debugger. The browser shows a “debugging this browser” banner while a task runs; it clears when the task ends.</p>
             </details>
           </div>
         </section>
@@ -223,7 +223,7 @@
             <p class="hint">Keeps your 20 most recent chats in this browser so you can reopen them from the side panel. Never sent anywhere.</p>
             <details class="more">
               <summary>Learn more</summary>
-              <p class="hint">History keeps what you see in the chat: your messages and the assistant's replies. It doesn't keep screenshots, the page text the assistant read, or the steps it took. A chat that reads or opens a banking, payment or crypto site is never saved. Your prompt history (↑ in the chat box) follows this switch too. Turning it off deletes both; the chat that's open stays until Chrome closes. When you continue a saved chat, its earlier messages are sent to the model you're using now.</p>
+              <p class="hint">History keeps what you see in the chat: your messages and the assistant's replies. It doesn't keep screenshots, the page text the assistant read, or the steps it took. A chat that reads or opens a banking, payment or crypto site is never saved. Your prompt history (↑ in the chat box) follows this switch too. Turning it off deletes both; the chat that's open stays until the browser closes. When you continue a saved chat, its earlier messages are sent to the model you're using now.</p>
             </details>
           </div>
           <div class="field history-row">
@@ -258,7 +258,7 @@
             <svg class="ic xmark"><use href="#ic-chevron-down" /></svg>
           </summary>
           <div class="xbody">
-            <p class="hint">Run a prompt on a repeating schedule while Chrome is open. Unattended runs act without asking and will not confirm purchases or deletions (those are declined for safety).</p>
+            <p class="hint">Run a prompt on a repeating schedule while the browser is open. Unattended runs act without asking and will not confirm purchases or deletions (those are declined for safety).</p>
             <div id="sched-list" class="stack"></div>
             <p id="no-sched" class="empty-note">No scheduled tasks yet.</p>
             <button id="add-sched" class="btn btn-ghost small">
