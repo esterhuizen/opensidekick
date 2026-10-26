@@ -39,7 +39,7 @@ import {
 import { resolveSource, isNoteworthyChange, featureEnabled, thresholdFor } from "./decisions.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
-import { ensureContentScript } from "./tools.js";
+import { ensureContentScript, normalizeTarget } from "./tools.js";
 import { applyMigrations } from "./migrations.js";
 
 // -------------------------------------------------------------------------
@@ -734,7 +734,7 @@ async function runScheduledTask(task) {
   let tabId;
   try {
     if (task.url) {
-      const tab = await chrome.tabs.create({ url: normalizeUrl(task.url), active: true });
+      const tab = await chrome.tabs.create({ url: normalizeTarget(task.url), active: true });
       tabId = tab.id;
       await waitTabComplete(tabId);
     } else {
@@ -860,12 +860,6 @@ function notify(title, message) {
   } catch {
     /* notifications may be unavailable */
   }
-}
-
-function normalizeUrl(u) {
-  const s = String(u || "").trim();
-  if (!s) return s;
-  return /^[a-z]+:\/\//i.test(s) ? s : "https://" + s;
 }
 
 function waitTabComplete(tabId, timeoutMs = 15000) {

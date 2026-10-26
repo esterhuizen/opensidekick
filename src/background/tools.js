@@ -378,18 +378,30 @@ async function navigate(ctx, target) {
   } else if (target === "forward") {
     await chrome.tabs.goForward(tabId).catch(() => {});
   } else {
-    let url = target.trim();
-    if (!/^https?:\/\//i.test(url) && !/^[a-z]+:\/\//i.test(url)) url = "https://" + url;
-    await chrome.tabs.update(tabId, { url });
+    const full = normalizeTarget(target);
+    if (!full) return { ok: false, error: "OpenSidekick navigates to http(s) addresses only." };
+    await chrome.tabs.update(tabId, { url: full });
   }
   await waitForLoad(tabId);
   const tab = await chrome.tabs.get(tabId);
   return { ok: true, url: tab.url, title: tab.title };
 }
 
+// Shared by the tab tools, navigate, and the gate, so the key matches the tab.
+export function normalizeTarget(url) {
+  const raw = String(url ?? "").trim();
+  if (!raw) return "";
+  const scheme = raw.match(/^([a-z]+):/i);
+  if (scheme) {
+    const s = scheme[1].toLowerCase();
+    return s === "http" || s === "https" ? raw : "";
+  }
+  return "https://" + raw;
+}
+
 async function openTab(ctx, url) {
-  let full = url.trim();
-  if (!/^https?:\/\//i.test(full) && !/^[a-z]+:\/\//i.test(full)) full = "https://" + full;
+  const full = normalizeTarget(url);
+  if (!full) return { ok: false, error: "OpenSidekick opens tabs to http(s) addresses only." };
   const tab = await chrome.tabs.create({ url: full, active: true });
   ctx.setTabId(tab.id);
   await waitForLoad(tab.id);

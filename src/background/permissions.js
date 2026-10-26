@@ -7,6 +7,7 @@
 //     origin to be "allow"-listed. The first such action on a new origin
 //     triggers a user prompt (Allow once / Always allow / Decline), UNLESS
 //     autonomy is "auto" and the origin isn't already blocked.
+//   - A focus tool (switch_tab) prompts only in allowlist mode, like a read.
 //   - Sensitive categories (banking, payments, crypto) always require an
 //     explicit per-action confirmation and cannot be "always allowed".
 
@@ -17,6 +18,7 @@ export const MUTATING_TOOLS = new Set([
   "type_text",
   "select_option",
   "navigate",
+  "open_tab",
   "scroll",
   "double_click",
   "right_click",
@@ -36,6 +38,8 @@ export const PAGE_READ_TOOLS = new Set([
   "read_console",
   "read_network",
 ]);
+
+export const FOCUS_TOOLS = new Set(["switch_tab"]);
 
 export function originOf(url) {
   try {
@@ -68,13 +72,15 @@ export function evaluate(toolName, url, config, sessionGrants) {
   const allowlistMode = config.settings.siteAccess === "allowlist";
   const isMutating = MUTATING_TOOLS.has(toolName);
   const isPageRead = PAGE_READ_TOOLS.has(toolName);
+  const isFocus = FOCUS_TOOLS.has(toolName);
 
-  // Non-page tools (list_tabs, wait, finish, …) are never gated. Page reads are
-  // free in "all sites" mode; in allowlist mode they're gated like actions.
-  if (!isMutating && !(allowlistMode && isPageRead)) return { decision: "allow" };
+  // list_tabs touches no page; switch_tab moves focus, so it is gated like a read
+  if (!isMutating && !isFocus && !(allowlistMode && isPageRead)) return { decision: "allow" };
 
   const origin = originOf(url);
-  if (!origin) return { decision: "block", reason: "Page has no permissible origin." };
+  if (!origin || origin === "null") {
+    return { decision: "block", reason: "This target has no gateable web origin." };
+  }
 
   const stored = config.sitePermissions[origin];
   if (stored === "block") {
@@ -82,7 +88,7 @@ export function evaluate(toolName, url, config, sessionGrants) {
   }
 
   const sensitive = isSensitive(url);
-  if (sensitive && isMutating) {
+  if (sensitive && (isMutating || isFocus)) {
     // Sensitive sites always prompt per action and are never auto/always allowed.
     return { decision: "prompt", sensitive: true };
   }
@@ -96,6 +102,11 @@ export function evaluate(toolName, url, config, sessionGrants) {
     // even in auto mode, and even for reads. The prompt is the quick "trust
     // this site" toggle.
     return { decision: "prompt", sensitive: false, newSite: true };
+  }
+
+  if (isFocus) {
+    // Focus acts on no page, so "all sites" mode grants it with no session grant.
+    return { decision: "allow" };
   }
 
   if (config.settings.autonomy === "auto") {

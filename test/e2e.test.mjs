@@ -35,6 +35,7 @@ let failures = 0;
 let sawImage = false; // set by the mock when a request carries an image part
 let lastImageUrl = ""; // the most recent image data URI the mock received
 let probeRequests = []; // { model, kind } per testModel probe the mock answered
+let smartRequests = []; // the state string per smart-check (Jev) request the mock answered
 let probeDelayMs = 0; // holds the tools probe open, so a run can be observed/cancelled
 let lastSystem = ""; // the system prompt of the most recent agent (non-probe) request
 const HOSTED_ALIAS = "hosted.test"; // mapped onto the mock by --host-resolver-rules
@@ -107,13 +108,21 @@ const WIDGET_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Pre
   </script>
 </body></html>`;
 
-// A benign page served from a DIFFERENT origin (second port) for the
-// domain-re-check test.
+// A benign page served from a DIFFERENT origin (second port) for the domain-re-check test.
 const SECOND_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Other Site</title></head>
-<body><h1>Other Site</h1></body></html>`;
+<body><h1>Other Site</h1>
+  <button id="two" type="button">Open Second</button>
+  <div id="out"></div>
+  <script>
+    document.getElementById('two').addEventListener('click', function () {
+      document.getElementById('out').textContent = 'second-clicked';
+    });
+  </script>
+</body></html>`;
 
 let BASE1 = ""; // first server base URL, set in main()
 let BASE2 = ""; // second server (different origin), set in main()
+const BANK_BASE = () => `http://chase.bank.test:${new URL(BASE2).port}`;
 
 // Every construct the side panel must draw, plus the destinations it must refuse.
 // The harness renders it too, so the streamed DOM can be checked against the
@@ -227,6 +236,73 @@ function decide(messages) {
     if (n === 0) return { kind: "tool", name: "mcp_testmcp_get_weather", args: { city: "Paris" } };
     const wr = parsed.find((p) => typeof p.result === "string" && /weather/i.test(p.result));
     return { kind: "text", text: "mcp_answer: " + (wr ? wr.result : "?") };
+  }
+
+  // Tab gate: drive open_tab/list_tabs/switch_tab through the permission gate.
+  // The task phrase picks the destination and the follow-on tools.
+  if (/open a new tab/.test(firstUser)) {
+    // chase.bank.test exercises isSensitive with no phone-home to a real site.
+    const dest = /bank/.test(firstUser) ? `http://chase.bank.test:${new URL(BASE2).port}/two` : `${BASE2}/two`;
+    // The click scenario reads BASE1 first, so the gate remembers B1.
+    const seq = [];
+    const isBtn = (e) => e.tag === "button" || e.role === "button";
+    if (/click the button/.test(firstUser)) seq.push({ kind: "tool", name: "read_page", args: {} });
+    seq.push({ kind: "tool", name: "open_tab", args: { url: dest } });
+    if (/twice/.test(firstUser)) seq.push({ kind: "tool", name: "open_tab", args: { url: dest } });
+    if (/list the tabs/.test(firstUser)) seq.push({ kind: "tool", name: "list_tabs", args: {} });
+    if (/switch back/.test(firstUser)) {
+      const listed = (parsed.find((p) => Array.isArray(p.tabs)) || {}).tabs || [];
+      seq.push({ kind: "tool", name: "switch_tab", args: { tab_id: listed[0]?.tab_id } });
+    }
+    if (/click the button/.test(firstUser)) {
+      // The ref comes from the newest elements map, so the second click is the button on the new tab.
+      seq.push({ kind: "tool", name: "click_element", args: { ref: elements.find(isBtn)?.ref ?? 1 } });
+      seq.push({ kind: "tool", name: "read_page", args: {} });
+      seq.push({ kind: "tool", name: "click_element", args: { ref: elements.find(isBtn)?.ref ?? 1 } });
+    }
+    if (n >= seq.length) {
+      // The finish summary carries the two observations the checks read.
+      const stale = /changed to .* since you last read/i.test((parsed[2] || {}).error || "");
+      const click2 = (parsed[4] || {}).ok === true;
+      return { kind: "tool", name: "finish", args: { summary: `tabflow stale=${stale} click2=${click2}` } };
+    }
+    return seq[n];
+  }
+
+  // The untrusted tab is opened by the scenario, not by open_tab, so no prompt is consumed before the read.
+  if (/untrusted tab/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "list_tabs", args: {} };
+    // The tab id comes from the list_tabs result.
+    const tabs = (parsed[0] || {}).tabs || [];
+    const untrusted = tabs.filter((t) => (t.url || "").startsWith(BASE2)).pop();
+    if (n === 1) return { kind: "tool", name: "switch_tab", args: { tab_id: untrusted?.tab_id } };
+    if (n === 2) return { kind: "tool", name: "read_page", args: {} };
+    return {
+      kind: "tool",
+      name: "finish",
+      args: { summary: `pinned tabs=${tabs.length} untrusted=${!!untrusted} read=${(parsed[2] || {}).ok === true} title=${(parsed[2] || {}).title}` },
+    };
+  }
+
+  // The bank tab is opened by the scenario, so the only gate in play is the switch.
+  if (/bank tab/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "list_tabs", args: {} };
+    const tabs = (parsed[0] || {}).tabs || [];
+    const bank = tabs.filter((t) => (t.url || "").startsWith(BANK_BASE())).pop();
+    if (n === 1) return { kind: "tool", name: "switch_tab", args: { tab_id: bank?.tab_id } };
+    if (n === 2) return { kind: "tool", name: "read_page", args: {} };
+    return {
+      kind: "tool",
+      name: "finish",
+      args: { summary: `bank switched=${(parsed[1] || {}).ok === true} read=${(parsed[2] || {}).ok === true} title=${(parsed[2] || {}).title}` },
+    };
+  }
+
+  // A tab id that was never read, so no tab is read at the gate.
+  if (/missing tab/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "list_tabs", args: {} };
+    if (n === 1) return { kind: "tool", name: "switch_tab", args: { tab_id: 987654 } };
+    return { kind: "tool", name: "finish", args: { summary: `bogus error=${(parsed[1] || {}).error}` } };
   }
 
   // Custom combobox: open it, then pick an option from the list it reveals.
@@ -395,6 +471,19 @@ function startServer() {
       });
       return;
     }
+    // The smart-check endpoint records the state string asked about and answers "not risky".
+    if (req.url.endsWith("/decisions") && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        try {
+          smartRequests.push(JSON.parse(body).state || "");
+        } catch {}
+        res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
+        res.end(JSON.stringify({ answers: { risky: { noul: 0 } } }));
+      });
+      return;
+    }
     if (req.url.endsWith("/chat/completions") && req.method === "POST") {
       let body = "";
       req.on("data", (c) => (body += c));
@@ -481,7 +570,8 @@ async function main() {
       // A non-loopback hostname that still lands on the mock, so the
       // "a key-less hosted provider sends nothing" assertion can actually fail:
       // if the code probed it, the request would be recorded.
-      `--host-resolver-rules=MAP ${HOSTED_ALIAS} 127.0.0.1`,
+      // chase.bank.test is mapped for the sensitive-host scenario.
+      `--host-resolver-rules=MAP ${HOSTED_ALIAS} 127.0.0.1, MAP chase.bank.test 127.0.0.1`,
     ],
   });
 
@@ -1000,7 +1090,8 @@ async function main() {
       chrome.runtime.onMessage.addListener((m) => {
         if (m && m.type === agentEventType) window.__events.push(m);
         if (m && m.type === permReq) {
-          window.__perm.push({ sensitive: !!m.sensitive, toolName: m.toolName, id: m.id, mcp: m.mcp === true, origin: m.origin, why: m.why || "" });
+          // newSite is recorded so the allowlist prompt is observable.
+          window.__perm.push({ sensitive: !!m.sensitive, toolName: m.toolName, id: m.id, mcp: m.mcp === true, origin: m.origin, why: m.why || "", newSite: !!m.newSite });
           chrome.runtime.sendMessage({ type: permResp, id: m.id, choice: window.__permChoice || "once" });
         }
       });
@@ -1013,6 +1104,10 @@ async function main() {
         if (m && m.type === agentEventType && m.kind === "note") window.__notes.push(m.text);
       });
     }, MSG.AGENT_EVENT);
+
+    // The stored per-site rules, read from the worker's storage.
+    const siteRules = () =>
+      optPage.evaluate(async (key) => ((await chrome.storage.local.get(key))[key] || {}).sitePermissions || {}, STORAGE_KEY);
 
     // Make the test page the active tab, then kick off the task.
     await testPage.bringToFront();
@@ -1387,7 +1482,7 @@ async function main() {
     await optPage.evaluate(() => (window.__permChoice = "once"));
 
     // (4) None of that may create a per-site rule for an MCP server.
-    const mcpSitePerms = await optPage.evaluate(async (key) => ((await chrome.storage.local.get(key))[key] || {}).sitePermissions || {}, STORAGE_KEY);
+    const mcpSitePerms = await siteRules();
     check(
       Object.keys(mcpSitePerms).every((k) => !/mcp/i.test(k)),
       `mcp-gate: no sitePermissions entry for an MCP server (keys: ${JSON.stringify(Object.keys(mcpSitePerms))})`,
@@ -2196,6 +2291,179 @@ async function main() {
     const chipText2 = await chipPanel.$eval("#context-hint", (e) => e.textContent).catch(() => "");
     check(/allowed/.test(chipText2) && !/not allowed yet/.test(chipText2), `site-chip: chip reflects the new rule (got "${chipText2}")`);
     await chipPanel.close();
+
+    // --- Tab gate: open_tab is gated by the destination origin, switch_tab by the tab it moves to ---
+    const B1 = new URL(base).origin;
+    const B2 = new URL(BASE2).origin;
+    const seedTab = (over = {}) =>
+      optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [
+        STORAGE_KEY,
+        {
+          ...config,
+          ...(over.decisions ? { decisions: over.decisions } : {}),
+          sitePermissions: over.sitePermissions || {},
+          settings: { ...config.settings, autonomy: over.autonomy || "ask", siteAccess: over.siteAccess || "all" },
+        },
+      ]);
+    // The smart check is pointed at this server, so it never adds a card.
+    const SMART = { enabled: true, source: "typesafe", apiKey: "test-key", baseUrl: `${base}/decisions`, features: { action: true } };
+    // Each scenario closes the tabs it opened, so tab counts stay valid.
+    const closeExtra = async () => {
+      for (const p of context.pages()) {
+        if (p !== testPage && p !== optPage && p !== tabPanel && /^https?:\/\//.test(p.url())) await p.close().catch(() => {});
+      }
+    };
+
+    const tabPanel = await context.newPage();
+    await tabPanel.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`, { waitUntil: "load" });
+
+    // BASE1 is trusted, so the only prompt that can be raised is the destination's.
+    await closeExtra();
+    await seedTab({ autonomy: "ask", sitePermissions: { [B1]: "allow" }, decisions: SMART });
+    await optPage.evaluate(() => (window.__permChoice = "once"));
+    smartRequests = [];
+    const cardsBefore = await tabPanel.evaluate(() => document.querySelectorAll(".perm-card").length);
+    // The log row carries the arg hint only while the action runs, so rows are recorded at tool-start.
+    await tabPanel.evaluate(() => {
+      window.__rows = [];
+      new MutationObserver((muts) => {
+        for (const m of muts) {
+          for (const n of m.addedNodes) {
+            if (n.nodeType === 1 && n.classList.contains("log-row")) window.__rows.push(n.textContent);
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    const tabFlow = await drive("Open a new tab for the second origin twice, list the tabs, switch back, and finish.");
+    const openPerms = tabFlow.perms.filter((p) => p.toolName === "open_tab");
+    check(openPerms.length === 1, `tab-gate: exactly one open_tab request (got ${openPerms.length})`);
+    check(!!openPerms[0] && openPerms[0].origin === B2, `tab-gate: the request origin is the destination, not the page (got "${openPerms[0] && openPerms[0].origin}")`);
+    check(tabFlow.perms.length === 1, `tab-gate: "Allow once" covers the second open_tab, no second request (got ${tabFlow.perms.length})`);
+    const tabCard = await tabPanel.evaluate((before) => {
+      const c = document.querySelectorAll(".perm-card")[before];
+      return c ? { title: c.querySelector("h3").textContent, intro: c.querySelector("p").textContent } : { title: "", intro: "" };
+    }, cardsBefore);
+    check(tabCard.title === "Allow action?", `tab-gate: the card title reads Allow action? (got "${tabCard.title}")`);
+    check(/open a new tab to \S*\/two/.test(tabCard.intro), `tab-gate: the card intro names the destination url (got "${tabCard.intro}")`);
+    const openRows = await tabPanel.evaluate(() => (window.__rows || []).filter((t) => t.includes("open_tab")));
+    check(openRows.length === 2 && openRows.every((t) => t.includes(`${BASE2}/two`)), `tab-gate: the open_tab log row names the destination url (rows ${JSON.stringify(openRows)})`);
+    // open_tab has no element ref, so actionLabel's label must be the destination, never an empty Target line.
+    check(smartRequests.some((s) => s.includes("Tool: open_tab") && s.includes(`Target: ${BASE2}/two`)), `tab-gate: the smart check is asked about the destination as tool and label (got ${JSON.stringify(smartRequests.map((s) => s.split("\n").filter((l) => /^(Tool|Target):/.test(l))))})`);
+
+    // The run reads BASE1 first, so observedOrigin points at B1 when the new tab is clicked.
+    await closeExtra();
+    await seedTab({ autonomy: "ask", sitePermissions: { [B1]: "allow" } });
+    const staleRun = await drive("Read the page, open a new tab for the second origin, click the button, read the page, click the button again, and finish.");
+    const staleEnd = staleRun.events.find((e) => e.kind === "tool_end" && e.name === "click_element" && e.ok === false) || {};
+    // The refusal is observable as the tool_end summary.
+    check(/page changed/.test(staleEnd.summary || ""), `tab-gate: click on the un-read new tab is refused (got "${staleEnd.summary || ""}")`);
+    check(/click2=true/.test(answerOf(staleRun.events)), `tab-gate: read_page on the new tab clears the stale origin (got "${answerOf(staleRun.events)}")`);
+
+    // "Always allow" persists the destination origin, not the page's.
+    await closeExtra();
+    await seedTab({ autonomy: "ask" });
+    await optPage.evaluate(() => (window.__permChoice = "always"));
+    await drive("Open a new tab for the second origin and finish.");
+    const rulesAlways = await siteRules();
+    check(rulesAlways[B2] === "allow", `tab-gate: "always" stores sitePermissions for the destination (got ${JSON.stringify(rulesAlways)})`);
+    check(!(B1 in rulesAlways), `tab-gate: "always" writes no rule for the page origin (keys ${JSON.stringify(Object.keys(rulesAlways))})`);
+
+    // "Decline" hands back the decline, ends the run, writes no rule.
+    await closeExtra();
+    await seedTab({ autonomy: "ask" });
+    await optPage.evaluate(() => (window.__permChoice = "decline"));
+    const declineRun = await drive("Open a new tab for the second origin and finish.");
+    const declineStarts = declineRun.events.filter((e) => e.kind === "tool_start").length;
+    const declined = declineRun.events.filter((e) => e.kind === "tool_end" && e.name === "open_tab" && e.ok === false && /declined/i.test(e.summary || ""));
+    check(declined.length === 1, `tab-gate: a declined open_tab hands the model the decline (got ${declined.length})`);
+    check(declineStarts === 1 && declineRun.events.some((e) => e.kind === "idle"), `tab-gate: a decline ends the run right after the open_tab (tool_starts ${declineStarts}, idle ${declineRun.events.some((e) => e.kind === "idle")})`);
+    const rulesDecline = await siteRules();
+    check(Object.keys(rulesDecline).length === 0, `tab-gate: a decline writes no rule (keys ${JSON.stringify(Object.keys(rulesDecline))})`);
+
+    // A seeded block on the destination refuses the open, and prompts nothing.
+    await closeExtra();
+    await seedTab({ autonomy: "ask", sitePermissions: { [B2]: "block" } });
+    await optPage.evaluate(() => (window.__permChoice = "once"));
+    const blockRun = await drive("Open a new tab for the second origin and finish.");
+    const blockEnd = blockRun.events.find((e) => e.kind === "tool_end" && e.name === "open_tab" && e.ok === false) || {};
+    check((blockEnd.summary || "").includes(`blocked OpenSidekick on ${B2}`), `tab-gate: a seeded block on the destination refuses open_tab, naming the destination (got "${blockEnd.summary || ""}")`);
+    check(blockRun.perms.length === 0, `tab-gate: a blocked destination prompts nothing (got ${blockRun.perms.length})`);
+
+    // A bank destination stays sensitive even in auto.
+    await closeExtra();
+    await seedTab({ autonomy: "auto", sitePermissions: { [B1]: "allow" } });
+    const bankRun = await drive("Open a new tab to the bank site and finish.");
+    const bankPerms = bankRun.perms.filter((p) => p.toolName === "open_tab");
+    check(bankPerms.length === 1 && bankPerms[0].sensitive === true, `tab-gate: auto mode prompts a bank destination with sensitive:true (got ${JSON.stringify(bankPerms)})`);
+
+    // list_tabs stays silent, switch_tab is the one prompt, and its grant covers the next read.
+    await closeExtra();
+    await seedTab({ autonomy: "auto", siteAccess: "allowlist", sitePermissions: { [B1]: "allow" } });
+    await optPage.evaluate(() => (window.__permChoice = "once"));
+    const alTab = await context.newPage();
+    await alTab.goto(`${BASE2}/two`, { waitUntil: "load" });
+    const pinCards = await tabPanel.evaluate(() => document.querySelectorAll(".perm-card").length);
+    const pinRun = await drive("List the tabs, switch to the untrusted tab, read the page, and finish.");
+    const pinLists = pinRun.perms.filter((p) => p.toolName === "list_tabs");
+    check(pinLists.length === 0, `tab-gate: list_tabs prompts nothing in allowlist mode (got ${pinLists.length})`);
+    const pinSwitch = pinRun.perms.filter((p) => p.toolName === "switch_tab");
+    check(pinSwitch.length === 1 && pinSwitch[0].newSite === true, `tab-gate: switch_tab prompts once with newSite:true in allowlist mode (got ${JSON.stringify(pinSwitch)})`);
+    const pinCard = await tabPanel.evaluate((before) => {
+      const c = document.querySelectorAll(".perm-card")[before];
+      return c ? { title: c.querySelector("h3").textContent, intro: c.querySelector("p").textContent } : { title: "", intro: "" };
+    }, pinCards);
+    check(pinCard.title === "New site — trust it?", `tab-gate: the switch_tab card title reads New site — trust it? (got "${pinCard.title}")`);
+    check(/wants to switch to a tab here/.test(pinCard.intro), `tab-gate: the switch_tab card copy reads switch to a tab (got "${pinCard.intro}")`);
+    const pinReads = pinRun.perms.filter((p) => p.toolName === "read_page");
+    check(pinReads.length === 0, `tab-gate: the switch_tab grant covers the next read, no second card (got ${pinReads.length})`);
+    check(/read=true title=Other Site/.test(answerOf(pinRun.events)), `tab-gate: the read lands on the tab focus moved to (got "${answerOf(pinRun.events)}")`);
+    check(!toolsOf(pinRun.events).includes("open_tab"), `tab-gate: the untrusted tab is the scenario's, not an open_tab (tools ${toolsOf(pinRun.events).join(",")})`);
+
+    // All-sites + auto pins that the autonomy prompt is allowlist-only.
+    await closeExtra();
+    await seedTab({ autonomy: "auto", sitePermissions: { [B1]: "allow" } });
+    const allTab = await context.newPage();
+    await allTab.goto(`${BASE2}/two`, { waitUntil: "load" });
+    const autoRun = await drive("List the tabs, switch to the untrusted tab, read the page, and finish.");
+    check(autoRun.perms.length === 0, `tab-gate: switch_tab prompts nothing with all sites + auto (got ${autoRun.perms.map((p) => p.toolName).join(",")})`);
+
+    // A stored block gates focus in every mode, and focus does not move.
+    await closeExtra();
+    await seedTab({ autonomy: "auto", sitePermissions: { [B1]: "allow", [B2]: "block" } });
+    const blockedTab = await context.newPage();
+    await blockedTab.goto(`${BASE2}/two`, { waitUntil: "load" });
+    const focusBlock = await drive("List the tabs, switch to the untrusted tab, read the page, and finish.");
+    const blockSwitch = focusBlock.events.find((e) => e.kind === "tool_end" && e.name === "switch_tab" && e.ok === false) || {};
+    check((blockSwitch.summary || "").includes(`blocked OpenSidekick on ${B2}`), `tab-gate: a block rule refuses switch_tab, naming the tab's origin (got "${blockSwitch.summary || ""}")`);
+    check(focusBlock.perms.length === 0, `tab-gate: a blocked tab prompts nothing (got ${focusBlock.perms.length})`);
+    check(/read=true title=Test Search/.test(answerOf(focusBlock.events)), `tab-gate: focus stays on the original tab after a refused switch (got "${answerOf(focusBlock.events)}")`);
+
+    // The bank rule gates focus in every mode, and the card cannot always-allow it.
+    await closeExtra();
+    await seedTab({ autonomy: "auto", sitePermissions: { [B1]: "allow" } });
+    const bankTab = await context.newPage();
+    await bankTab.goto(`${BANK_BASE()}/two`, { waitUntil: "load" });
+    const bankCards = await tabPanel.evaluate(() => document.querySelectorAll(".perm-card").length);
+    const bankFocus = await drive("List the tabs, switch to the bank tab, read the page, and finish.");
+    const focusPerms = bankFocus.perms.filter((p) => p.toolName === "switch_tab");
+    check(bankFocus.perms.length === 1 && focusPerms.length === 1 && focusPerms[0].sensitive === true, `tab-gate: focus onto the bank tab prompts once with sensitive:true (got ${JSON.stringify(bankFocus.perms)})`);
+    const bankCard = await tabPanel.evaluate((before) => {
+      const c = document.querySelectorAll(".perm-card")[before];
+      return c ? [...c.querySelectorAll("button")].map((b) => b.textContent) : [];
+    }, bankCards);
+    check(!bankCard.some((t) => /always|trust/i.test(t)), `tab-gate: the sensitive switch card offers no "Always allow" (buttons ${JSON.stringify(bankCard)})`);
+
+    // A tab id that was never read gets the tool's own answer, no card.
+    await closeExtra();
+    const bogusRun = await drive("List the tabs, switch to the missing tab, and finish.");
+    const bogusEnd = bogusRun.events.find((e) => e.kind === "tool_end" && e.name === "switch_tab" && e.ok === false) || {};
+    check(/No tab with id/.test(bogusEnd.summary || ""), `tab-gate: a bogus tab id lands on the tool's own message (got "${bogusEnd.summary || ""}")`);
+    check(bogusRun.perms.length === 0, `tab-gate: a bogus tab id prompts nothing (got ${bogusRun.perms.length})`);
+
+    await closeExtra();
+    await tabPanel.close();
+    // Restore the config the allowlist scenario changed.
+    await seedTab({ autonomy: "auto", siteAccess: "allowlist", sitePermissions: { [B1]: "allow" } });
 
     // --- Markdown rendering in the chat transcript ---
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);

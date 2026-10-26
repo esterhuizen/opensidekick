@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening a tab now asks, like navigating does** ([#8](https://github.com/esterhuizen/opensidekick/issues/8)). `open_tab` gets the full gate keyed on the site it opens; `switch_tab` asks in only-allowed-sites mode and honours a block rule and the bank rule for the tab it moves to; `list_tabs` is unchanged.
+
 ## [0.4.1] — 2026-10-25
 
 ### Fixed

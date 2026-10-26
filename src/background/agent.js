@@ -3,8 +3,8 @@
 // stops calling tools, calls `finish`, hits the step cap, or is aborted.
 
 import { callModel } from "./providers.js";
-import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
-import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, originOf, isSensitive } from "./permissions.js";
+import { TOOL_DEFS, executeTool, setOverlay, normalizeTarget } from "./tools.js";
+import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, isSensitive } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
@@ -340,21 +340,38 @@ export async function runAgent(deps) {
       // mode, for page reads too (the agent shouldn't even read an untrusted
       // site; the resulting prompt doubles as the "trust this site" toggle).
       const gateReads = config.settings.siteAccess === "allowlist" && PAGE_READ_TOOLS.has(call.name);
-      if (MUTATING_TOOLS.has(call.name) || gateReads) {
+      const isFocus = FOCUS_TOOLS.has(call.name);
+      let focusTab = null;
+      if (isFocus) {
+        try {
+          focusTab = await chrome.tabs.get(call.args?.tab_id);
+        } catch {
+          /* no tab was read: the tool's own "No tab with id" answers, not a gate refusal */
+        }
+      }
+      if (MUTATING_TOOLS.has(call.name) || gateReads || (isFocus && focusTab)) {
         let url = "";
         let pageTitle = "";
-        try {
-          const tab = await chrome.tabs.get(focusedTabId);
-          url = tab.url || "";
-          pageTitle = tab.title || "";
-        } catch {
-          /* ignore */
+        const isOpenTab = call.name === "open_tab";
+        if (isOpenTab) {
+          url = normalizeTarget(call.args?.url);
+        } else if (isFocus) {
+          url = focusTab.url || "";
+        } else {
+          try {
+            const tab = await chrome.tabs.get(focusedTabId);
+            url = tab.url || "";
+            pageTitle = tab.title || "";
+          } catch {
+            /* ignore */
+          }
         }
         const currentOrigin = originOf(url);
 
         // (A) Domain re-check: refuse to act if the page changed origin since it
         // was last read (defends against redirects / injected navigation).
-        if (!gateReads && observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
+        // Not for the tab tools: no page is observed at the destination yet.
+        if (!gateReads && !isOpenTab && !isFocus && observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
           pushToolResult(conversation, call, {
             ok: false,
             error: `The page changed to ${currentOrigin} since you last read it (was ${observedOrigin}). Call read_page again before acting on this page.`,
@@ -583,6 +600,7 @@ function actionLabel(call, lastElements) {
   const args = call.args || {};
   switch (call.name) {
     case "navigate":
+    case "open_tab":
       return String(args.url || "");
     case "press_keys":
       return Array.isArray(args.keys) ? args.keys.join("+") : String(args.keys || "");
