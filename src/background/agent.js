@@ -462,12 +462,12 @@ export async function runAgent(deps) {
         // After a sensitive page, typing and scripts on any site can carry what
         // was read there (a form post, a fetch), so they ask per action too.
         if (sawSensitive && SEND_TOOLS.has(call.name) && verdict.decision !== "block") {
-          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this task" };
+          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this chat (New chat resets this)" };
         }
         // Leaving a sensitive page (or any page after one): the destination URL
         // could carry what was read there, so every navigation asks.
         if (loadsTarget && verdict.decision !== "block" && (sawSensitive || isSensitive(await tabUrl(focusedTabId)))) {
-          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this task" };
+          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this chat (New chat resets this)" };
         }
         if (forceSensitive && verdict.decision !== "block") {
           verdict = { decision: "prompt", sensitive: true };
@@ -549,7 +549,8 @@ export async function runAgent(deps) {
           // The page may have changed while the card was open: act only on the
           // site the user was asked about.
           const checkTab = isFocus ? runArgs.tab_id : focusedTabId;
-          if ((actsOnPage || gateReads || isFocus) && originOf(await tabUrl(checkTab)) !== originOf(promptUrl)) {
+          const nowOrigin = originOf(await tabUrl(checkTab));
+          if ((actsOnPage || gateReads || isFocus) && nowOrigin !== originOf(url) && nowOrigin !== originOf(altUrl || url)) {
             pushToolResult(conversation, call, {
               ok: false,
               error: "The page changed while waiting for approval. Call read_page again.",
