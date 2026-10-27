@@ -203,6 +203,22 @@ function decide(messages) {
     return { kind: "text", text: "buy_done" };
   }
 
+  // Gate (#8): a trick address that reads as a plan-approved host but loads a bank.
+  if (/trick address/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "open_tab", args: { url: "https://chase.com?.127.0.0.1/" } };
+    return { kind: "text", text: "trick_done" };
+  }
+  // Gate (#8): open_tab to a site the user blocked.
+  if (/open a tab to the blocked site/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "open_tab", args: { url: `${BASE2}/` } };
+    return { kind: "text", text: "open_blocked=" + parsed.some((p) => /blocked/i.test(p.error || "")) };
+  }
+  // Gate: a tool the user turned off can't run just because the model names it.
+  if (/sneak a script/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "run_javascript", args: { code: "document.querySelector('#out').textContent='js-sneaked'; return 1;" } };
+    return { kind: "text", text: "sneak_refused=" + parsed.some((p) => /not available/i.test(p.error || "")) };
+  }
+
   // Domain re-check (A): read page, navigate to another origin, then try to act
   // without re-reading — the action should be blocked.
   if (/redirect|other site|different origin|another site/.test(firstUser)) {
@@ -210,7 +226,7 @@ function decide(messages) {
     if (n === 0) return { kind: "tool", name: "read_page", args: {} };
     if (n === 1) return { kind: "tool", name: "navigate", args: { url: `${BASE2}/` } };
     if (n === 2) return { kind: "tool", name: "click_element", args: { ref: anyRef?.ref ?? 1 } };
-    const blocked = parsed.some((p) => /changed to .* since you last read/i.test(p.error || ""));
+    const blocked = parsed.some((p) => /changed to .* since you last read|on a different page now/i.test(p.error || ""));
     return { kind: "text", text: `redirect_blocked=${blocked}` };
   }
 
@@ -1127,8 +1143,24 @@ async function main() {
 
     // --- (A) domain re-check: after navigating to a different origin without
     // re-reading, the next action is blocked. ---
+    // open_tab honours a block rule on the site it opens, even in auto mode.
+    await optPage.evaluate(([key, cfg, origin]) => chrome.storage.local.set({ [key]: { ...cfg, sitePermissions: { [origin]: "block" } } }), [STORAGE_KEY, config, BASE2]);
+    const tabsBefore = (await context.pages()).length;
+    const openBlocked = await drive("Please open a tab to the blocked site.");
+    const tabsAfter = (await context.pages()).length;
+    check(/open_blocked=true/.test(answerOf(openBlocked.events)), `gate: open_tab to a blocked site is refused (got "${answerOf(openBlocked.events)}")`);
+    check(tabsAfter === tabsBefore, `gate: no tab was opened for the blocked site (${tabsBefore} -> ${tabsAfter})`);
+
+    // A tool the user turned off is refused even when the model names it.
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: { ...cfg, settings: { ...cfg.settings, enableJsTool: false } } }), [STORAGE_KEY, config]);
+    const sneak = await drive("Sneak a script onto the page.");
+    const sneakOut = await testPage.$eval("#out", (el) => el.textContent).catch(() => "");
+    check(/sneak_refused=true/.test(answerOf(sneak.events)), `gate: a disabled run_javascript is refused (got "${answerOf(sneak.events)}")`);
+    check(sneakOut !== "js-sneaked", "gate: the disabled script did not run");
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [STORAGE_KEY, config]);
+
     const redir = await drive("Read the page, then go to the other site and click something without re-reading.");
-    const redirWarned = redir.events.some((e) => e.kind === "warning" && /changed origin/i.test(e.text || ""));
+    const redirWarned = redir.events.some((e) => e.kind === "warning" && /changed origin|moved to another page/i.test(e.text || ""));
     check(/redirect_blocked=true/.test(answerOf(redir.events)), `safety: action blocked after origin change (got "${answerOf(redir.events)}")`);
     check(redirWarned, "safety: user was warned about the origin change");
 
@@ -1173,6 +1205,14 @@ async function main() {
     check(!!(plans[0] && Array.isArray(plans[0].steps) && plans[0].steps.length > 0), "plan: the proposed plan included steps");
     check(planOut === "Results for: cats", `plan: after approval the task ran to completion (got "${planOut}")`);
     check(planRun.events.filter((e) => e.kind === "error").length === 0, "plan: no error events");
+
+    // Plan approval never clears a sensitive prompt, and the plan check reads the
+    // parsed host: "chase.com?.127.0.0.1" is chase.com, not the approved 127.0.0.1.
+    await optPage.evaluate(() => { window.__permChoice = "decline"; });
+    const trick = await drive("Open the trick address in a new tab.");
+    await optPage.evaluate(() => { window.__permChoice = "once"; });
+    check(trick.perms.some((p) => p.toolName === "open_tab" && p.sensitive && p.origin === "https://chase.com"),
+      `gate: a plan-approved look-alike address still asks as chase.com (perms ${JSON.stringify(trick.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
 
     // --- Saved prompts / "/" menu (drive the real side panel UI) ---
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: cfg }), [

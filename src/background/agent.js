@@ -4,7 +4,7 @@
 
 import { callModel } from "./providers.js";
 import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
-import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, originOf, isSensitive } from "./permissions.js";
+import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
@@ -104,6 +104,10 @@ export async function runAgent(deps) {
   const approvedHosts = new Set(); // hostnames the user approved in plan mode
   const touchedTabs = new Set(); // tabs we showed the activity overlay on
   let observedOrigin = null; // origin of the page the agent last read
+  // Set when the agent's tab or page changes under it (navigate, open_tab,
+  // switch_tab): it must read the new page before acting there, so refs and
+  // labels from another page can't be reused and (D) sees the right labels.
+  let needsRead = false;
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
@@ -256,6 +260,14 @@ export async function runAgent(deps) {
 
       emit({ kind: "tool_start", name: call.name, args: call.args });
 
+      // Only tools offered this run may run: a model can name a tool it was not
+      // given (a disabled run_javascript, the debugger readers, screenshots).
+      if (!tools.some((t) => t.name === call.name)) {
+        pushToolResult(conversation, call, { ok: false, error: `The tool ${call.name} is not available in this task.` });
+        emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: tool not offered" });
+        continue;
+      }
+
       // (F) Loop detector: a model that retries the identical call forever burns
       // the step budget and the user's patience. Three identical calls IN A ROW
       // is enough — refuse the fourth and tell it to vary. Consecutive, not
@@ -340,21 +352,64 @@ export async function runAgent(deps) {
       // mode, for page reads too (the agent shouldn't even read an untrusted
       // site; the resulting prompt doubles as the "trust this site" toggle).
       const gateReads = config.settings.siteAccess === "allowlist" && PAGE_READ_TOOLS.has(call.name);
-      if (MUTATING_TOOLS.has(call.name) || gateReads) {
+      const isFocus = FOCUS_TOOLS.has(call.name);
+      // navigate (to a URL) and open_tab are judged by the site they load.
+      const loadsTarget =
+        call.name === "open_tab" || (call.name === "navigate" && !["back", "forward"].includes(call.args?.url));
+      // Tools that act on the page in the agent's tab (not on another tab or URL).
+      const actsOnPage = MUTATING_TOOLS.has(call.name) && !loadsTarget;
+      let runArgs = call.args || {};
+      if (MUTATING_TOOLS.has(call.name) || gateReads || isFocus) {
         let url = "";
         let pageTitle = "";
-        try {
-          const tab = await chrome.tabs.get(focusedTabId);
-          url = tab.url || "";
+        if (loadsTarget) {
+          url = normalizeTarget(call.args?.url);
+          if (!url) {
+            pushToolResult(conversation, call, { ok: false, error: "Only http(s) web addresses can be opened." });
+            emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: not an http(s) address" });
+            continue;
+          }
+          runArgs = { ...runArgs, url }; // the tool loads exactly the URL that was gated
+        } else if (isFocus) {
+          let tab = null;
+          try {
+            tab = await chrome.tabs.get(Number(call.args?.tab_id));
+          } catch {
+            /* refused below: no tab, no switch */
+          }
+          if (!tab) {
+            pushToolResult(conversation, call, { ok: false, error: `No tab with id ${call.args?.tab_id}.` });
+            emit({ kind: "tool_end", name: call.name, ok: false, summary: "no such tab" });
+            continue;
+          }
+          url = tab.pendingUrl || tab.url || "";
           pageTitle = tab.title || "";
-        } catch {
-          /* ignore */
+          runArgs = { ...runArgs, tab_id: tab.id };
+        } else {
+          try {
+            const tab = await chrome.tabs.get(focusedTabId);
+            url = tab.url || "";
+            pageTitle = tab.title || "";
+          } catch {
+            /* ignore */
+          }
         }
         const currentOrigin = originOf(url);
 
+        // (A0) After the tab or page changed under the agent, read before acting.
+        if (actsOnPage && needsRead) {
+          pushToolResult(conversation, call, {
+            ok: false,
+            error: "You are on a different page now. Call read_page before acting on it.",
+          });
+          emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: read the new page first" });
+          emit({ kind: "warning", text: `Blocked ${call.name}: the agent moved to another page and hasn't read it yet.` });
+          continue;
+        }
+
         // (A) Domain re-check: refuse to act if the page changed origin since it
         // was last read (defends against redirects / injected navigation).
-        if (!gateReads && observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
+        if (actsOnPage && observedOrigin && currentOrigin && currentOrigin !== observedOrigin) {
           pushToolResult(conversation, call, {
             ok: false,
             error: `The page changed to ${currentOrigin} since you last read it (was ${observedOrigin}). Call read_page again before acting on this page.`,
@@ -374,9 +429,11 @@ export async function runAgent(deps) {
         let verdict = evaluate(call.name, url, config, sessionGrants);
         if (forceSensitive && verdict.decision !== "block") {
           verdict = { decision: "prompt", sensitive: true };
-        } else if (verdict.decision === "prompt") {
-          // In plan mode, act freely on sites the user approved in the plan.
-          const currentHost = hostFromDomain(url);
+        } else if (verdict.decision === "prompt" && !verdict.sensitive) {
+          // In plan mode, act freely on sites the user approved in the plan —
+          // never on a sensitive site, which asks per action. The host is the
+          // parsed one, so "chase.com?.approved.com" is chase.com.
+          const currentHost = hostOf(url);
           const preApproved = currentHost && [...approvedHosts].some((h) => currentHost === h || currentHost.endsWith("." + h));
           if (preApproved) verdict = { decision: "allow" };
         }
@@ -433,7 +490,7 @@ export async function runAgent(deps) {
           const choice = await requestPermission({
             origin,
             toolName: call.name,
-            args: call.args,
+            args: runArgs,
             sensitive: !!verdict.sensitive,
             newSite: !!verdict.newSite,
             why: verdict.why || "",
@@ -467,7 +524,7 @@ export async function runAgent(deps) {
       executed.push(signature);
       let toolResult;
       try {
-        toolResult = await executeTool(call.name, call.args || {}, ctx);
+        toolResult = await executeTool(call.name, runArgs, ctx);
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
       }
@@ -481,11 +538,19 @@ export async function runAgent(deps) {
         toolResult = { ok: true, url: toolResult.url, note: toolResult.note || "Image attached below." };
       }
 
+      // The agent is on another page now (or may be): forget the last read.
+      if (call.name === "navigate" || call.name === "open_tab" || call.name === "switch_tab") {
+        needsRead = true;
+        observedOrigin = null;
+        lastElements.clear();
+      }
+
       // (B) Track the observed origin and flag suspected prompt injection so the
       // model treats page instructions as data, not commands.
       if (toolResult && toolResult.ok !== false && (call.name === "read_page" || call.name === "get_page_text")) {
         observedOrigin = originOf(toolResult.url) || observedOrigin;
         if (call.name === "read_page") {
+          needsRead = false; // refs and labels now come from this page
           lastElements.clear();
           for (const el of toolResult.elements || []) lastElements.set(el.ref, el.name || "");
         }
@@ -583,6 +648,7 @@ function actionLabel(call, lastElements) {
   const args = call.args || {};
   switch (call.name) {
     case "navigate":
+    case "open_tab":
       return String(args.url || "");
     case "press_keys":
       return Array.isArray(args.keys) ? args.keys.join("+") : String(args.keys || "");

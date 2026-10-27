@@ -2,6 +2,7 @@
 // active tab. Tool schemas are provider-agnostic (plain JSON Schema); the
 // provider layer converts them to the right wire format.
 
+import { normalizeTarget } from "./permissions.js";
 import { MSG } from "../common/constants.js";
 import { readConsole, readNetwork } from "./cdp.js";
 
@@ -378,8 +379,8 @@ async function navigate(ctx, target) {
   } else if (target === "forward") {
     await chrome.tabs.goForward(tabId).catch(() => {});
   } else {
-    let url = target.trim();
-    if (!/^https?:\/\//i.test(url) && !/^[a-z]+:\/\//i.test(url)) url = "https://" + url;
+    const url = normalizeTarget(target);
+    if (!url) return { ok: false, error: "OpenSidekick navigates to http(s) addresses only." };
     await chrome.tabs.update(tabId, { url });
   }
   await waitForLoad(tabId);
@@ -388,8 +389,8 @@ async function navigate(ctx, target) {
 }
 
 async function openTab(ctx, url) {
-  let full = url.trim();
-  if (!/^https?:\/\//i.test(full) && !/^[a-z]+:\/\//i.test(full)) full = "https://" + full;
+  const full = normalizeTarget(url);
+  if (!full) return { ok: false, error: "OpenSidekick opens tabs to http(s) addresses only." };
   const tab = await chrome.tabs.create({ url: full, active: true });
   ctx.setTabId(tab.id);
   await waitForLoad(tab.id);

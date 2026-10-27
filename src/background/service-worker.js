@@ -40,6 +40,7 @@ import { resolveSource, isNoteworthyChange, featureEnabled, thresholdFor } from 
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
 import { ensureContentScript } from "./tools.js";
+import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
 
 // -------------------------------------------------------------------------
@@ -734,7 +735,12 @@ async function runScheduledTask(task) {
   let tabId;
   try {
     if (task.url) {
-      const tab = await chrome.tabs.create({ url: normalizeUrl(task.url), active: true });
+      const url = normalizeTarget(task.url);
+      if (!url) {
+        notify(task.name, "Skipped — the task's address isn't an http(s) web address.");
+        return;
+      }
+      const tab = await chrome.tabs.create({ url, active: true });
       tabId = tab.id;
       await waitTabComplete(tabId);
     } else {
@@ -860,12 +866,6 @@ function notify(title, message) {
   } catch {
     /* notifications may be unavailable */
   }
-}
-
-function normalizeUrl(u) {
-  const s = String(u || "").trim();
-  if (!s) return s;
-  return /^[a-z]+:\/\//i.test(s) ? s : "https://" + s;
 }
 
 function waitTabComplete(tabId, timeoutMs = 15000) {

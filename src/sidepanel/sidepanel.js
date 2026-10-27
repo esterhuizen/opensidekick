@@ -951,6 +951,12 @@ function describeAction(name, args) {
       return "choose a dropdown option";
     case "navigate":
       return `navigate to ${args ? args.url : "a page"}`;
+    case "open_tab":
+      return args && args.url ? `open a new tab to ${args.url}` : "open a new tab";
+    case "switch_tab":
+      return "switch to another tab";
+    case "hover_element":
+      return "hover over an element";
     case "scroll":
       return "scroll the page";
     case "read_page":
@@ -969,7 +975,7 @@ function describeAction(name, args) {
 
 function argHint(name, args) {
   if (!args) return "";
-  if (name === "navigate") return args.url || "";
+  if (name === "navigate" || name === "open_tab") return args.url || "";
   if (name === "type_text") return `"${(args.text || "").slice(0, 30)}"`;
   if (name === "select_option") return args.value || "";
   if ("ref" in args) return "ref " + args.ref;
