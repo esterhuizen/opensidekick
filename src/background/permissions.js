@@ -105,13 +105,15 @@ export function normalizeTarget(input) {
  */
 export function storedRule(sitePermissions, url) {
   const perms = sitePermissions || {};
-  const origin = originOf(url);
-  if (origin && perms[origin]) return perms[origin];
+  const keys = [originOf(url)];
   try {
-    return perms[new URL(url).origin] || null;
+    keys.push(new URL(url).origin);
   } catch {
-    return null;
+    /* not a URL */
   }
+  const rules = keys.filter(Boolean).map((k) => perms[k]).filter(Boolean);
+  if (rules.includes("block")) return "block"; // a block on either key wins
+  return rules[0] || null;
 }
 
 /** The stricter of two verdicts: block > sensitive prompt > prompt > allow. */

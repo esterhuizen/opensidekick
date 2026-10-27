@@ -208,6 +208,12 @@ function decide(messages) {
     if (n === 0) return { kind: "tool", name: "open_tab", args: { url: "https://chase.com?.127.0.0.1/" } };
     return { kind: "text", text: "trick_done" };
   }
+  // Gate: a later task in the same chat, after a bank read, navigates away.
+  if (/now go to the other site/.test(lastUser)) {
+    const lastIdx = messages.map((m) => m.role).lastIndexOf("user");
+    if (!messages.slice(lastIdx).some((m) => m.role === "tool")) return { kind: "tool", name: "navigate", args: { url: `${BASE2}/?b=12345` } };
+    return { kind: "text", text: "went_other" };
+  }
   // Gate: a plan that lists a bank still asks per action there.
   if (/bank plan/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "open_tab", args: { url: "https://chase.com/" } };
@@ -1111,10 +1117,10 @@ async function main() {
     check(vErrors.length === 0, `vision: no error events (${vErrors.map((e) => e.error).join("; ")})`);
 
     // Helper: run a task to completion; also tracks the on-page activity overlay.
-    const drive = async (task) => {
+    const drive = async (task, { newChat = true } = {}) => {
       await optPage.evaluate(() => { window.__events = []; window.__perm = []; });
       await testPage.bringToFront();
-      await optPage.evaluate(([rt, t]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: true }), [MSG.RUN_TASK, task]);
+      await optPage.evaluate(([rt, t, nc]) => chrome.runtime.sendMessage({ type: rt, task: t, newChat: nc }), [MSG.RUN_TASK, task, newChat]);
       for (let i = 0; i < 160; i++) {
         const evs = await optPage.evaluate(() => window.__events || []);
         if (evs.some((e) => e.kind === "idle")) break;
@@ -1195,7 +1201,12 @@ async function main() {
     const stillOnBank = testPage.url().startsWith(bankUrl.split("/page")[0]);
     check(leave.perms.some((p) => p.toolName === "navigate" && p.sensitive), `gate: leaving a bank page asks first (perms ${JSON.stringify(leave.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
     check(stillOnBank, `gate: after a decline the agent stayed on the bank page (at ${testPage.url()})`);
+    // The next task in the same chat still counts the bank read.
     await testPage.goto(`${base}/page`, { waitUntil: "load" });
+    await optPage.evaluate(() => { window.__permChoice = "decline"; });
+    const later = await drive("Now go to the other site.", { newChat: false });
+    await optPage.evaluate(() => { window.__permChoice = "once"; });
+    check(later.perms.some((p) => p.toolName === "navigate" && p.sensitive), `gate: a later task in the same chat still asks after a bank read (perms ${JSON.stringify(later.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
 
     // A tool the user turned off is refused even when the model names it.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: { ...cfg, settings: { ...cfg.settings, enableJsTool: false } } }), [STORAGE_KEY, config]);

@@ -7,6 +7,7 @@ import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
 import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
+import { touchesSensitiveSite } from "./sessions.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
 import { resolveSource, classifyInjection, classifyAction, createBreaker, thresholdFor, featureEnabled } from "./decisions.js";
 
@@ -60,6 +61,9 @@ function identityNotes(config, provider) {
     plan: `You are the model "${model}" via the provider "${provider.name}".\n\n`,
   };
 }
+
+// Tools that can send text out of the page (form fields, scripts).
+const SEND_TOOLS = new Set(["type_text", "press_keys", "run_javascript"]);
 
 // The URL a tab shows or is loading ("" when the tab is gone).
 async function tabUrl(tabId) {
@@ -121,7 +125,9 @@ export async function runAgent(deps) {
   // Set once the run has been on a sensitive page (banking, payments, crypto):
   // from then on every navigation asks, since the next URL could carry data
   // read there (?balance=…) to another site.
-  let sawSensitive = isSensitive(await tabUrl(initialTabId));
+  // Earlier tasks in the same chat count: the conversation still holds what
+  // they read.
+  let sawSensitive = touchesSensitiveSite(conversation) || isSensitive(await tabUrl(initialTabId));
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
@@ -445,7 +451,19 @@ export async function runAgent(deps) {
         }
 
         let verdict = evaluate(call.name, url, config, sessionGrants);
-        if (altUrl) verdict = stricter(verdict, evaluate(call.name, altUrl, config, sessionGrants));
+        let promptUrl = url; // the site the card names
+        if (altUrl) {
+          const alt = evaluate(call.name, altUrl, config, sessionGrants);
+          if (stricter(verdict, alt) === alt) {
+            verdict = alt;
+            promptUrl = altUrl;
+          }
+        }
+        // After a sensitive page, typing and scripts on any site can carry what
+        // was read there (a form post, a fetch), so they ask per action too.
+        if (sawSensitive && SEND_TOOLS.has(call.name) && verdict.decision !== "block") {
+          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this task" };
+        }
         // Leaving a sensitive page (or any page after one): the destination URL
         // could carry what was read there, so every navigation asks.
         if (loadsTarget && verdict.decision !== "block" && (sawSensitive || isSensitive(await tabUrl(focusedTabId)))) {
@@ -510,7 +528,7 @@ export async function runAgent(deps) {
           continue;
         }
         if (verdict.decision === "prompt") {
-          const origin = originOf(url) || url;
+          const origin = originOf(promptUrl) || promptUrl;
           const choice = await requestPermission({
             origin,
             toolName: call.name,
@@ -530,7 +548,8 @@ export async function runAgent(deps) {
           }
           // The page may have changed while the card was open: act only on the
           // site the user was asked about.
-          if (actsOnPage && originOf(await tabUrl(focusedTabId)) !== originOf(url)) {
+          const checkTab = isFocus ? runArgs.tab_id : focusedTabId;
+          if ((actsOnPage || gateReads || isFocus) && originOf(await tabUrl(checkTab)) !== originOf(promptUrl)) {
             pushToolResult(conversation, call, {
               ok: false,
               error: "The page changed while waiting for approval. Call read_page again.",

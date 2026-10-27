@@ -94,5 +94,8 @@ ok(evaluate("click_element", "https://example.com./", cfg("all", "auto", { "http
 ok(stricter({ decision: "allow" }, { decision: "prompt", sensitive: true }).sensitive === true, "stricter: sensitive prompt beats allow");
 ok(stricter({ decision: "block", reason: "x" }, { decision: "prompt" }).decision === "block", "stricter: block beats prompt");
 
+ok(storedRule({ "https://example.com": "allow", "https://example.com.": "block" }, "https://example.com./") === "block", "a block on the dotted key wins over an allow on the plain key");
+ok(storedRule({ "https://example.com": "allow" }, "https://example.com./") === "allow", "a plain-key allow covers the dotted page");
+
 console.log(fail ? "\nSOME PERMISSION TESTS FAILED" : "\nALL PERMISSION TESTS PASSED");
 process.exit(fail);
