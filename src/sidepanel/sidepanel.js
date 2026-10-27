@@ -17,6 +17,7 @@ import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 import { escapeHtml } from "../common/escape.js";
 import { markdownToHtml, createStreamingRenderer, renderTick, CODE_CLASS, setHighlighter } from "../common/markdown.js";
 import { relativeTime } from "../background/sessions.js";
+import { originOf, storedRule } from "../background/permissions.js";
 
 // Prism loads as scripts in sidepanel.html, so it is a global by the time this
 // module runs. Prism's own DOM scan is switched off: the panel renders HTML
@@ -411,10 +412,10 @@ async function refreshContextHint() {
       return;
     }
     const url = new URL(tab.url);
-    currentSiteOrigin = url.origin;
+    currentSiteOrigin = originOf(tab.url); // the key the permission gate reads
     const raw = await chrome.storage.local.get(STORAGE_KEY);
     const cfg = raw[STORAGE_KEY] || {};
-    const rule = (cfg.sitePermissions || {})[url.origin];
+    const rule = storedRule(cfg.sitePermissions, tab.url);
     const allowlist = cfg.settings && cfg.settings.siteAccess === "allowlist";
     let state = "";
     if (rule === "allow") state = '<span class="site-state ok">allowed</span>';
@@ -476,6 +477,10 @@ async function setSiteRule(origin, rule) {
     const raw = await chrome.storage.local.get(STORAGE_KEY);
     const cfg = raw[STORAGE_KEY] || {};
     cfg.sitePermissions = { ...(cfg.sitePermissions || {}) };
+    // Drop an older key for the same site saved with a trailing dot.
+    for (const k of Object.keys(cfg.sitePermissions)) {
+      if (k !== origin && originOf(k) === origin) delete cfg.sitePermissions[k];
+    }
     if (rule === "clear") delete cfg.sitePermissions[origin];
     else cfg.sitePermissions[origin] = rule;
     await chrome.storage.local.set({ [STORAGE_KEY]: cfg });

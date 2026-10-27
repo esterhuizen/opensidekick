@@ -100,6 +100,27 @@ export function normalizeTarget(input) {
 }
 
 /**
+ * The stored rule for a URL's site. Keys are origins without a trailing dot;
+ * rules saved before that (raw "https://example.com.") still count.
+ */
+export function storedRule(sitePermissions, url) {
+  const perms = sitePermissions || {};
+  const origin = originOf(url);
+  if (origin && perms[origin]) return perms[origin];
+  try {
+    return perms[new URL(url).origin] || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The stricter of two verdicts: block > sensitive prompt > prompt > allow. */
+export function stricter(a, b) {
+  const rank = (v) => (v.decision === "block" ? 3 : v.decision === "prompt" ? (v.sensitive ? 2 : 1) : 0);
+  return rank(b) > rank(a) ? b : a;
+}
+
+/**
  * Decide whether a tool call is permitted right now.
  * Returns one of:
  *   { decision: "allow" }
@@ -118,12 +139,18 @@ export function evaluate(toolName, url, config, sessionGrants) {
   // free in "all sites" mode; in allowlist mode they're gated like actions.
   // A focus tool always reaches the checks below, so block and sensitive rules
   // apply to it in every mode.
-  if (!isMutating && !isFocus && !(allowlistMode && isPageRead)) return { decision: "allow" };
+  if (!isMutating && !isFocus && !(allowlistMode && isPageRead)) {
+    // A site the user blocked stays blocked for reads too.
+    if (isPageRead && storedRule(config.sitePermissions, url) === "block") {
+      return { decision: "block", reason: `You have blocked OpenSidekick on ${originOf(url)}.` };
+    }
+    return { decision: "allow" };
+  }
 
   const origin = originOf(url);
   if (!origin || origin === "null") return { decision: "block", reason: "Page has no permissible origin." };
 
-  const stored = config.sitePermissions[origin];
+  const stored = storedRule(config.sitePermissions, url);
   if (stored === "block") {
     return { decision: "block", reason: `You have blocked OpenSidekick on ${origin}.` };
   }

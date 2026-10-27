@@ -208,6 +208,32 @@ function decide(messages) {
     if (n === 0) return { kind: "tool", name: "open_tab", args: { url: "https://chase.com?.127.0.0.1/" } };
     return { kind: "text", text: "trick_done" };
   }
+  // Gate: a plan that lists a bank still asks per action there.
+  if (/bank plan/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "open_tab", args: { url: "https://chase.com/" } };
+    return { kind: "text", text: "bank_plan_done" };
+  }
+  // Gate: leaving a bank page asks, whatever the destination.
+  if (/leave the bank/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "read_page", args: {} };
+    if (n === 1) return { kind: "tool", name: "navigate", args: { url: `${BASE2}/?b=12345` } };
+    return { kind: "text", text: "left_bank" };
+  }
+  // Gate: navigate to a blocked site is refused.
+  if (/navigate to the blocked site/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "navigate", args: { url: `${BASE2}/` } };
+    return { kind: "text", text: "nav_blocked=" + parsed.some((p) => /blocked/i.test(p.error || "")) };
+  }
+  // Gate: switch_tab to a tab on a blocked site is refused.
+  if (/switch to the blocked tab/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "list_tabs", args: {} };
+    if (n === 1) {
+      const list = parsed.find((p) => Array.isArray(p.tabs));
+      const t = list && list.tabs.find((x) => String(x.url || "").startsWith(BASE2));
+      return { kind: "tool", name: "switch_tab", args: { tab_id: t ? t.id ?? t.tab_id : -1 } };
+    }
+    return { kind: "text", text: "switch_blocked=" + parsed.some((p) => /blocked/i.test(p.error || "")) };
+  }
   // Gate (#8): open_tab to a site the user blocked.
   if (/open a tab to the blocked site/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "open_tab", args: { url: `${BASE2}/` } };
@@ -451,7 +477,7 @@ function startServer() {
             JSON.stringify({
               summary: "Search the page for cats",
               steps: ["Read the page", "Type cats into the search box", "Click Search"],
-              domains: ["127.0.0.1"],
+              domains: /bank plan/i.test(String(messages.find((m) => m.role === "user")?.content || "")) ? ["127.0.0.1", "chase.com"] : ["127.0.0.1"],
               needs_actions: true,
             }),
           );
@@ -1151,6 +1177,26 @@ async function main() {
     check(/open_blocked=true/.test(answerOf(openBlocked.events)), `gate: open_tab to a blocked site is refused (got "${answerOf(openBlocked.events)}")`);
     check(tabsAfter === tabsBefore, `gate: no tab was opened for the blocked site (${tabsBefore} -> ${tabsAfter})`);
 
+    const navBlocked = await drive("Please navigate to the blocked site.");
+    check(/nav_blocked=true/.test(answerOf(navBlocked.events)), `gate: navigate to a blocked site is refused (got "${answerOf(navBlocked.events)}")`);
+    const otherTab = await context.newPage();
+    await otherTab.goto(`${BASE2}/`, { waitUntil: "load" });
+    const swBlocked = await drive("Please switch to the blocked tab.");
+    await otherTab.close();
+    check(/switch_blocked=true/.test(answerOf(swBlocked.events)), `gate: switch_tab to a tab on a blocked site is refused (got "${answerOf(swBlocked.events)}")`);
+
+    // Leaving a bank page asks before going anywhere (the URL could carry data).
+    await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: { ...cfg, sitePermissions: {} } }), [STORAGE_KEY, config]);
+    const bankUrl = base.replace("127.0.0.1", "bank.localhost") + "/page";
+    await testPage.goto(bankUrl, { waitUntil: "load" });
+    await optPage.evaluate(() => { window.__permChoice = "decline"; });
+    const leave = await drive("Leave the bank page.");
+    await optPage.evaluate(() => { window.__permChoice = "once"; });
+    const stillOnBank = testPage.url().startsWith(bankUrl.split("/page")[0]);
+    check(leave.perms.some((p) => p.toolName === "navigate" && p.sensitive), `gate: leaving a bank page asks first (perms ${JSON.stringify(leave.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
+    check(stillOnBank, `gate: after a decline the agent stayed on the bank page (at ${testPage.url()})`);
+    await testPage.goto(`${base}/page`, { waitUntil: "load" });
+
     // A tool the user turned off is refused even when the model names it.
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: { ...cfg, settings: { ...cfg.settings, enableJsTool: false } } }), [STORAGE_KEY, config]);
     const sneak = await drive("Sneak a script onto the page.");
@@ -1210,7 +1256,10 @@ async function main() {
     // parsed host: "chase.com?.127.0.0.1" is chase.com, not the approved 127.0.0.1.
     await optPage.evaluate(() => { window.__permChoice = "decline"; });
     const trick = await drive("Open the trick address in a new tab.");
+    const bankPlan = await drive("Bank plan: open the bank in a new tab.");
     await optPage.evaluate(() => { window.__permChoice = "once"; });
+    check(bankPlan.perms.some((p) => p.toolName === "open_tab" && p.sensitive),
+      `gate: a bank listed in the approved plan still asks per action (perms ${JSON.stringify(bankPlan.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
     check(trick.perms.some((p) => p.toolName === "open_tab" && p.sensitive && p.origin === "https://chase.com"),
       `gate: a plan-approved look-alike address still asks as chase.com (perms ${JSON.stringify(trick.perms.map((p) => [p.toolName, p.origin, p.sensitive]))})`);
 

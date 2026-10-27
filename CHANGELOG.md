@@ -11,11 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   reported by @kurotope). Opening a tab now asks like navigating does, and both
   are judged by the site they load, not the page the agent is on. Switching to
   a tab honours a block rule and the bank rule, and asks in only-allowed-sites
-  mode. Only http(s) addresses can be opened. A tool you turned off in Settings
-  can't run even if the model asks for it by name. Plan approval never skips
-  the per-action prompt on a sensitive site. After it changes page or tab, the
-  agent must read the new page before acting on it. Hovering now counts as an
-  action.
+  mode. Once the agent has been on a sensitive site in a task, every later
+  navigation asks first, so a URL can't carry what it read there to another
+  site. A blocked site is also blocked for reading. Only http(s) addresses can
+  be opened. A tool you turned off in Settings can't run even if the model asks
+  for it by name. Plan approval never skips the per-action prompt on a
+  sensitive site. After it changes page or tab, the agent must read the new
+  page before acting on it, and an action is refused if the page changed while
+  you were deciding. Hovering now counts as an action.
 
 ## [0.4.1] — 2026-10-25
 

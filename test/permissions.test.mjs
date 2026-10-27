@@ -1,7 +1,7 @@
 // Unit tests for the per-site permission logic (pure — no chrome APIs),
 // including the "only allowed sites" (allowlist) access mode.
 
-import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "../src/background/permissions.js";
+import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget, storedRule, stricter } from "../src/background/permissions.js";
 
 let fail = 0;
 const ok = (c, m) => { console.log((c ? "ok  : " : "FAIL: ") + m); if (!c) fail = 1; };
@@ -85,6 +85,14 @@ for (const bad of ["javascript:alert(1)", "data:text/html,hi", "file:///etc/pass
 }
 ok(originOf(nt("//evil.com/x")) === "https://evil.com", "//host is that host");
 ok(hostOf(nt("chase.com?.approved.com")) === "chase.com", "normalized trick address still parses to chase.com");
+
+// --- Block rules apply to reads in every mode; legacy trailing-dot keys still count ---
+ok(evaluate("read_page", URL_A, cfg("all", "auto", { "https://example.com": "block" }), none).decision === "block", "all-mode: reading a blocked site is blocked");
+ok(evaluate("get_page_text", URL_A, cfg("all", "ask"), none).decision === "allow", "all-mode: reading an unlisted site is still free");
+ok(storedRule({ "https://example.com.": "block" }, "https://example.com./x") === "block", "a rule saved with a trailing dot still matches its own page");
+ok(evaluate("click_element", "https://example.com./", cfg("all", "auto", { "https://example.com.": "block" }), none).decision === "block", "legacy trailing-dot block rule still blocks");
+ok(stricter({ decision: "allow" }, { decision: "prompt", sensitive: true }).sensitive === true, "stricter: sensitive prompt beats allow");
+ok(stricter({ decision: "block", reason: "x" }, { decision: "prompt" }).decision === "block", "stricter: block beats prompt");
 
 console.log(fail ? "\nSOME PERMISSION TESTS FAILED" : "\nALL PERMISSION TESTS PASSED");
 process.exit(fail);

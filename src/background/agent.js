@@ -4,7 +4,7 @@
 
 import { callModel } from "./providers.js";
 import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
-import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
+import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
@@ -61,6 +61,16 @@ function identityNotes(config, provider) {
   };
 }
 
+// The URL a tab shows or is loading ("" when the tab is gone).
+async function tabUrl(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    return t.pendingUrl || t.url || "";
+  } catch {
+    return "";
+  }
+}
+
 export async function runAgent(deps) {
   const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, saveSitePermission } = deps;
   const identity = identityNotes(config, provider);
@@ -108,6 +118,10 @@ export async function runAgent(deps) {
   // switch_tab): it must read the new page before acting there, so refs and
   // labels from another page can't be reused and (D) sees the right labels.
   let needsRead = false;
+  // Set once the run has been on a sensitive page (banking, payments, crypto):
+  // from then on every navigation asks, since the next URL could carry data
+  // read there (?balance=…) to another site.
+  let sawSensitive = isSensitive(await tabUrl(initialTabId));
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
@@ -356,12 +370,15 @@ export async function runAgent(deps) {
       // navigate (to a URL) and open_tab are judged by the site they load.
       const loadsTarget =
         call.name === "open_tab" || (call.name === "navigate" && !["back", "forward"].includes(call.args?.url));
-      // Tools that act on the page in the agent's tab (not on another tab or URL).
-      const actsOnPage = MUTATING_TOOLS.has(call.name) && !loadsTarget;
+      // Tools that act on the page in the agent's tab (not on another tab or URL;
+      // back/forward move through history and need no fresh read).
+      const actsOnPage = MUTATING_TOOLS.has(call.name) && call.name !== "navigate" && !loadsTarget;
+      const gateReadsAll = PAGE_READ_TOOLS.has(call.name); // a block rule applies to reads in every mode
       let runArgs = call.args || {};
-      if (MUTATING_TOOLS.has(call.name) || gateReads || isFocus) {
+      if (MUTATING_TOOLS.has(call.name) || gateReadsAll || isFocus) {
         let url = "";
         let pageTitle = "";
+        let altUrl = ""; // switch_tab: a tab's pendingUrl, judged too
         if (loadsTarget) {
           url = normalizeTarget(call.args?.url);
           if (!url) {
@@ -382,7 +399,8 @@ export async function runAgent(deps) {
             emit({ kind: "tool_end", name: call.name, ok: false, summary: "no such tab" });
             continue;
           }
-          url = tab.pendingUrl || tab.url || "";
+          url = tab.url || tab.pendingUrl || "";
+          altUrl = tab.pendingUrl && tab.pendingUrl !== url ? tab.pendingUrl : "";
           pageTitle = tab.title || "";
           runArgs = { ...runArgs, tab_id: tab.id };
         } else {
@@ -427,6 +445,12 @@ export async function runAgent(deps) {
         }
 
         let verdict = evaluate(call.name, url, config, sessionGrants);
+        if (altUrl) verdict = stricter(verdict, evaluate(call.name, altUrl, config, sessionGrants));
+        // Leaving a sensitive page (or any page after one): the destination URL
+        // could carry what was read there, so every navigation asks.
+        if (loadsTarget && verdict.decision !== "block" && (sawSensitive || isSensitive(await tabUrl(focusedTabId)))) {
+          verdict = { decision: "prompt", sensitive: true, why: "The agent has been on a sensitive site in this task" };
+        }
         if (forceSensitive && verdict.decision !== "block") {
           verdict = { decision: "prompt", sensitive: true };
         } else if (verdict.decision === "prompt" && !verdict.sensitive) {
@@ -504,6 +528,17 @@ export async function runAgent(deps) {
             emit({ kind: "done" });
             return;
           }
+          // The page may have changed while the card was open: act only on the
+          // site the user was asked about.
+          if (actsOnPage && originOf(await tabUrl(focusedTabId)) !== originOf(url)) {
+            pushToolResult(conversation, call, {
+              ok: false,
+              error: "The page changed while waiting for approval. Call read_page again.",
+            });
+            emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: page changed during approval" });
+            needsRead = true;
+            continue;
+          }
           // Sensitive actions always re-prompt — never persist or session-grant.
           if (!verdict.sensitive) {
             if (choice === "always") await saveSitePermission(origin, "allow");
@@ -538,12 +573,16 @@ export async function runAgent(deps) {
         toolResult = { ok: true, url: toolResult.url, note: toolResult.note || "Image attached below." };
       }
 
-      // The agent is on another page now (or may be): forget the last read.
+      // The agent is on another page now (or may be): forget the last read, and
+      // judge where it actually landed (a redirect, back/forward, a pending load).
       if (call.name === "navigate" || call.name === "open_tab" || call.name === "switch_tab") {
         needsRead = true;
         observedOrigin = null;
         lastElements.clear();
+        const landed = await tabUrl(focusedTabId);
+        if (isSensitive(landed) || isSensitive(toolResult?.url || "")) sawSensitive = true;
       }
+      if (toolResult && isSensitive(toolResult.url || "")) sawSensitive = true;
 
       // (B) Track the observed origin and flag suspected prompt injection so the
       // model treats page instructions as data, not commands.
