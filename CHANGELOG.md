@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-10-27
+
 ### Security
 
 - **The site permission check is stricter** ([#8](https://github.com/esterhuizen/opensidekick/issues/8),
