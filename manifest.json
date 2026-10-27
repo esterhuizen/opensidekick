@@ -39,7 +39,8 @@
         "src/content/content-script.js"
       ],
       "run_at": "document_idle",
-      "all_frames": false
+      "all_frames": true,
+      "match_about_blank": true
     }
   ],
   "permissions": [
@@ -47,6 +48,7 @@
     "storage",
     "scripting",
     "tabs",
+    "tabGroups",
     "activeTab",
     "contextMenus",
     "notifications",

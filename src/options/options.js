@@ -621,6 +621,10 @@ function wireSettings() {
     config.settings.enableJsTool = e.target.checked;
     persist();
   });
+  $("#enable-native-input").addEventListener("change", (e) => {
+    config.settings.enableNativeInput = e.target.checked;
+    persist();
+  });
   $("#enable-cdp").addEventListener("change", (e) => {
     config.settings.enableCdp = e.target.checked;
     persist();
@@ -641,6 +645,7 @@ function renderSettings() {
   $("#temp-value").textContent = Number(s.temperature).toFixed(2);
   $("#enable-vision").checked = !!s.enableVision;
   $("#enable-js").checked = !!s.enableJsTool;
+  $("#enable-native-input").checked = s.enableNativeInput === true;
   $("#enable-cdp").checked = !!s.enableCdp;
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();

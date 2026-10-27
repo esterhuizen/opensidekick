@@ -64,10 +64,20 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Vision (on by default)** — the agent can capture a screenshot so a
   multimodal model can *see* the page (images, canvas apps, visual layout). Turn
   it off in Settings if you use a text-only model.
+- **Native input (opt-in)** — trusted browser mouse events and screenshot-guided
+  coordinate clicks and held-pointer drag-and-drop (drag_at) for embedded
+  players and sites rejecting synthetic events.
+  Chrome shows its debugger banner during use.
+- **Cross-origin iframe controls** — access embedded-document controls when the
+  extension has host access; no cross-origin parent DOM access is attempted.
 - **Optional developer tools** — read the page's console messages and network
   requests to debug ("why is this page erroring?"), and a run-JavaScript escape
   hatch for when the other tools aren't enough. Both opt-in in Settings.
-- **Multi-tab** — list, open, and switch tabs to complete a task.
+- **Persistent agent workspace** — keep the agent's tabs in a dedicated
+  **OpenSidekick** Chrome tab group. Background tabs belong to the workspace;
+  you can browse elsewhere while the agent continues its work. Background-tab
+  screenshots use CDP and may show Chrome's debugger banner.
+- **Multi-tab** — list, open, and switch tabs inside the workspace.
 - **Any provider, any model** via two protocols:
   - OpenAI-compatible (`/chat/completions`): OpenRouter, OpenAI, Google Gemini,
     Groq, Venice AI, Together, DeepSeek, **Ollama**, **LM Studio**, or any
@@ -240,7 +250,9 @@ check sends.
 2. The model calls tools like `read_page` (which returns a compact map of
    interactive elements, each with a numeric ref) and then `click_element`,
    `type_text`, `navigate`, etc.
-3. The content script executes those actions on the page and returns results.
+3. The agent uses its dedicated OpenSidekick tab group, creating tabs in the
+   background and keeping a logical focused tab independent of your active tab.
+   The content script executes actions on the agent's focused tab.
 4. Mutating actions on a new site trigger a permission prompt (unless you're in
    "auto" mode); sensitive sites always ask per action.
 5. The loop continues until the model calls `finish` or has nothing left to do.
@@ -281,9 +293,14 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling statement.
 
 ## Limitations (v0.1)
 
-- Actions are DOM-based (synthesized events), which works on most sites but can
-  miss elements inside closed shadow DOM, cross-origin iframes, or `<canvas>`
-  apps.
+- DOM actions work in accessible cross-origin frames. Frame-ref actions still
+  use DOM events; opt-in native `click_at` can send trusted clicks into them.
+  Closed shadow roots, inaccessible frames and canvas content may require
+  screenshot-guided coordinate selection. Coordinate drag_at works with drop
+  zones that have no element ref.
+- Coordinate actions use CSS viewport pixels and can hit the wrong element if
+  the page changes. As with other actions, Auto mode permits clicks without
+  confirmation on non-sensitive sites; enable native input only for trusted work.
 - Restricted pages (`chrome://`, the Chrome Web Store, PDFs) can't be read or
   acted on.
 - Scheduled/long tasks depend on the service worker staying alive; very long
@@ -297,6 +314,8 @@ Shipped since the first cut:
 - [x] Fuller action set — hover, double-click, right-click, drag, keyboard shortcuts
 - [x] Run-JavaScript escape hatch (opt-in)
 - [x] Read console errors + network requests via Chrome's debugger (opt-in)
+- [x] Trusted mouse input and screenshot-based coordinate clicks (opt-in)
+- [x] Read and act within permitted cross-origin iframes
 - [x] On-page activity indicator with a Stop button
 - [x] Prompt-injection flagging + pre-action domain re-check + sensitive-action confirmation
 - [x] Plan-approval mode (agent proposes steps + sites, you approve before it acts)
@@ -309,7 +328,6 @@ Shipped since the first cut:
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
 - [ ] Upload files into file inputs (via the debugger)
-- [ ] CDP-based trusted input for tougher sites
 - [ ] Firefox (WebExtensions) build
 
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -3,7 +3,7 @@
 // stops calling tools, calls `finish`, hits the step cap, or is aborted.
 
 import { callModel } from "./providers.js";
-import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
+import { TOOL_DEFS, executeTool, setOverlay, getRefUrl } from "./tools.js";
 import { evaluate, MUTATING_TOOLS, PAGE_READ_TOOLS, originOf, isSensitive } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
@@ -14,7 +14,9 @@ const SYSTEM_PROMPT = `You are OpenSidekick, a browser assistant that can read a
 
 How to work:
 - To understand a page, call read_page. It returns interactive elements each with a numeric "ref". Act on elements by their ref.
-- Prefer read_page before acting. After an action changes the page, read it again — refs are only valid for the most recent read_page.
+- Prefer read_page before acting. It also lists controls inside accessible cross-origin iframes. After changing the page, read again: refs are only valid for the latest read_page.
+- When a visual control has no ref, use click_at from a recent screenshot, only if native input is enabled and the target is clear.
+- For drag-and-drop with drop zones lacking refs, use drag_at with source and target centers from a fresh screenshot. It sends a continuous held-pointer gesture; verify the drop succeeded by reading or taking another screenshot.
 - Use get_page_text to read or summarize article content.
 - If the page is visual (a canvas app, images, a custom widget) or the text map isn't enough to locate something, call take_screenshot to see it — when that tool is available.
 - Take the smallest number of steps needed. Do not repeat an action that already succeeded.
@@ -62,7 +64,7 @@ function identityNotes(config, provider) {
 }
 
 export async function runAgent(deps) {
-  const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, saveSitePermission } = deps;
+  const { conversation, config, provider, initialTabId, tabGroupId = null, onFocusedTabChanged, signal, emit, requestPermission, requestPlanApproval, saveSitePermission } = deps;
   const identity = identityNotes(config, provider);
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
@@ -74,6 +76,7 @@ export async function runAgent(deps) {
     if (t.visionOnly && !s.enableVision) return false;
     if (t.jsOnly && !s.enableJsTool) return false;
     if (t.cdpOnly && !s.enableCdp) return false;
+    if (t.nativeOnly && s.enableNativeInput !== true) return false;
     return true;
   });
 
@@ -134,9 +137,14 @@ export async function runAgent(deps) {
   const declinedServers = new Set(); // MCP servers the user refused, for this run
   const ctx = {
     getTabId: async () => focusedTabId,
+    getTabGroupId: () => tabGroupId,
     setTabId: (id) => {
       focusedTabId = id;
+      if (onFocusedTabChanged) Promise.resolve(onFocusedTabChanged(id)).catch(() => {});
     },
+    enableCdpInput: s.enableNativeInput === true,
+    // Allowlist mode may only read the top document, not unapproved origins.
+    includeFrames: s.siteAccess !== "allowlist",
   };
 
   // Plan-approval mode: propose a plan and wait for approval before acting.
@@ -364,6 +372,13 @@ export async function runAgent(deps) {
           continue;
         }
 
+        // Never assume an iframe shares its embedding tab's origin. Evaluate
+        // element-ref actions against the actual frame URL last observed.
+        if (!gateReads && call.args?.ref != null) {
+          const frameUrl = getRefUrl(focusedTabId, call.args.ref);
+          if (frameUrl) url = frameUrl;
+        }
+
         // (D) High-consequence actions (buy / pay / delete / …) always confirm,
         // regardless of site or autonomy mode.
         let forceSensitive = false;
@@ -371,6 +386,9 @@ export async function runAgent(deps) {
           if (isSensitiveActionText(lastElements.get(call.args?.ref))) forceSensitive = true;
         }
 
+        // Coordinate clicks follow the same Ask/Plan/Auto policy as other
+        // mutations. Native input is separately opt-in, and sensitive-site
+        // / explicitly blocked-origin rules still apply.
         let verdict = evaluate(call.name, url, config, sessionGrants);
         if (forceSensitive && verdict.decision !== "block") {
           verdict = { decision: "prompt", sensitive: true };
@@ -494,7 +512,7 @@ export async function runAgent(deps) {
           toolResult.suspected_injection = true;
           toolResult.injection_note = INJECTION_NOTE;
           emit({ kind: "warning", text: "Possible prompt injection in page content — instructions found in the page will be ignored." });
-        } else if (dsrc && featureEnabled(config, "injection") && !isSensitive(toolResult.url || observedOrigin || "")) {
+        } else if (dsrc && featureEnabled(config, "injection") && !isSensitive(toolResult.url || observedOrigin || "") && !(toolResult.frames || []).some((f) => isSensitive(f.url))) {
           // The regex is an unconditional floor; this only ever adds a flag it
           // missed (paraphrases: "a note for any automated helper reading
           // this…"). Skipped entirely when the regex already flagged the page,
@@ -617,7 +635,7 @@ function summarizeResult(name, r) {
     case "get_page_text":
       return `read ${r.text ? r.text.length : 0} chars of text`;
     case "click_element":
-      return `clicked ${r.clicked || ""}`;
+      return `clicked ${r.clicked || ""}${r.obstructed ? " (target obstructed)" : ""}${r.trusted_input ? " [trusted]" : r.input_fallback ? " [DOM fallback]" : ""}`;
     case "type_text":
       return `typed "${(r.typed || "").slice(0, 40)}"${r.submitted ? " and submitted" : ""}`;
     case "select_option":

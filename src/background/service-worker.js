@@ -6,6 +6,7 @@ import {
   MSG,
   STORAGE_KEY,
   SESSION_CONVO_KEY,
+  SESSION_TAB_WORKSPACE_KEY,
   SESSION_CONVO_META_KEY,
   SESSION_BODY_PREFIX,
   HISTORY_NOTICE_KEY,
@@ -267,6 +268,156 @@ async function reconcileHistory() {
 }
 
 // -------------------------------------------------------------------------
+// Browser workspace — keep the agent's tabs in a dedicated Chrome tab group so
+// a task can continue while the user browses elsewhere. The group belongs to
+// the current conversation/session; the agent keeps a logical focused tab that
+// is independent of Chrome's visually active tab.
+// -------------------------------------------------------------------------
+const WORKSPACE_TITLE = "OpenSidekick";
+
+async function loadTabWorkspace() {
+  let stored = null;
+  try {
+    stored = (await chrome.storage.session.get(SESSION_TAB_WORKSPACE_KEY))[SESSION_TAB_WORKSPACE_KEY] || null;
+  } catch {
+    return null;
+  }
+  if (!stored || !Number.isInteger(stored.groupId)) return null;
+
+  try {
+    const group = await chrome.tabGroups.get(stored.groupId);
+    if (!group || !String(group.title || "").startsWith(WORKSPACE_TITLE)) {
+      await clearTabWorkspace();
+      return null;
+    }
+    const tabs = await chrome.tabs.query({ groupId: stored.groupId });
+    if (!tabs.length) {
+      await clearTabWorkspace();
+      return null;
+    }
+    const focused = tabs.find((t) => t.id === stored.focusedTabId) || tabs[0];
+    return {
+      groupId: stored.groupId,
+      focusedTabId: focused.id,
+      windowId: group.windowId,
+    };
+  } catch {
+    await clearTabWorkspace();
+    return null;
+  }
+}
+
+async function saveTabWorkspace(workspace) {
+  if (!workspace) return;
+  try {
+    await chrome.storage.session.set({ [SESSION_TAB_WORKSPACE_KEY]: workspace });
+  } catch {
+    /* session storage unavailable — the current run can still proceed */
+  }
+}
+
+async function clearTabWorkspace() {
+  try {
+    await chrome.storage.session.remove(SESSION_TAB_WORKSPACE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function createTabWorkspace(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  let groupId = Number.isInteger(tab.groupId) ? tab.groupId : -1;
+  let useExisting = false;
+
+  if (groupId >= 0) {
+    try {
+      const existing = await chrome.tabGroups.get(groupId);
+      useExisting = !!existing && String(existing.title || "").startsWith(WORKSPACE_TITLE);
+    } catch {
+      useExisting = false;
+    }
+  }
+
+  if (!useExisting) {
+    groupId = await chrome.tabs.group({ tabIds: [tabId] });
+  }
+
+  await chrome.tabGroups.update(groupId, {
+    title: WORKSPACE_TITLE,
+    color: "purple",
+    collapsed: false,
+  });
+
+  const workspace = { groupId, focusedTabId: tabId, windowId: tab.windowId };
+  await saveTabWorkspace(workspace);
+  return workspace;
+}
+
+async function ensureTabWorkspace(fresh = false) {
+  if (!fresh) {
+    const existing = await loadTabWorkspace();
+    if (existing) {
+      // Retain the agent's logical tab across turns even if Chrome still has
+      // the workspace's original tab active. Actual user tab selections are
+      // handled by tabs.onActivated below; no inference from current active tab.
+      return existing;
+    }
+  }
+
+  const tabId = await getActiveContentTabId();
+  if (tabId == null) return null;
+  return await createTabWorkspace(tabId);
+}
+
+async function rememberWorkspaceTab(groupId, tabId) {
+  if (!Number.isInteger(groupId) || !Number.isInteger(tabId)) return;
+  const workspace = await loadTabWorkspace();
+  if (!workspace || workspace.groupId !== groupId) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.groupId !== groupId) return;
+  } catch {
+    return;
+  }
+  workspace.focusedTabId = tabId;
+  await saveTabWorkspace(workspace);
+}
+
+async function setWorkspaceStatus(workspace, status) {
+  if (!workspace || !Number.isInteger(workspace.groupId)) return;
+  const suffix = status === "working" ? " •" : status === "done" ? " ✓" : "";
+  try {
+    await chrome.tabGroups.update(workspace.groupId, {
+      title: WORKSPACE_TITLE + suffix,
+      color: "purple",
+      collapsed: false,
+    });
+  } catch {
+    /* group may have been closed while the task was running */
+  }
+}
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  if (currentRun) return; // user tab switching must not redirect a live agent
+  const workspace = await loadTabWorkspace();
+  if (!workspace) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.groupId === workspace.groupId) {
+      workspace.focusedTabId = tabId;
+      await saveTabWorkspace(workspace);
+    }
+  } catch {
+    /* ignore */
+  }
+});
+
+chrome.tabGroups.onRemoved.addListener(async (group) => {
+  const workspace = await loadTabWorkspace();
+  if (workspace && workspace.groupId === group.id) await clearTabWorkspace();
+});
+
+// -------------------------------------------------------------------------
 // Lifecycle
 // -------------------------------------------------------------------------
 chrome.runtime.onInstalled.addListener(() => {
@@ -379,6 +530,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case MSG.NEW_CHAT: {
       loadLive()
         .then(resetLive)
+        .then(clearTabWorkspace)
         .then(() => sendResponse({ ok: true }));
       return true;
     }
@@ -600,16 +752,24 @@ async function handleRunTask(msg) {
   const runConversation = conversation;
   const saveMeta = { model: config.activeModel, provider: provider.name };
 
-  const controller = new AbortController();
-  currentRun = { controller, chat: true };
-
-  const initialTabId = await getActiveContentTabId();
-  if (initialTabId == null) {
-    emit({ kind: "error", error: "Could not find an active tab to work on." });
+  let workspace;
+  try {
+    workspace = await ensureTabWorkspace(!!msg.newChat);
+  } catch (e) {
+    emit({ kind: "error", error: "Could not create OpenSidekick workspace: " + String(e.message || e) });
     emit({ kind: "idle" });
-    currentRun = null;
+    return { ok: false, error: "workspace-failed" };
+  }
+  if (!workspace) {
+    emit({ kind: "error", error: "Could not find a browser tab for the OpenSidekick workspace." });
+    emit({ kind: "idle" });
     return { ok: false, error: "no-tab" };
   }
+  emit({ kind: "workspace_ready", groupId: workspace.groupId, tabId: workspace.focusedTabId });
+  const controller = new AbortController();
+  currentRun = { controller, chat: true, workspace };
+  const initialTabId = workspace.focusedTabId;
+  await setWorkspaceStatus(workspace, "working");
 
   // Keep the worker alive for the whole run (incl. while awaiting prompts).
   startKeepAlive();
@@ -620,6 +780,8 @@ async function handleRunTask(msg) {
     config,
     provider,
     initialTabId,
+    tabGroupId: workspace.groupId,
+    onFocusedTabChanged: (tabId) => rememberWorkspaceTab(workspace.groupId, tabId),
     signal: controller.signal,
     emit,
     requestPermission,
@@ -632,6 +794,7 @@ async function handleRunTask(msg) {
       await detachAll().catch(() => {});
       // Before idle, so whoever waits for idle sees the saved chat.
       await saveRun(runSession, runConversation, saveMeta).catch(() => {});
+      await setWorkspaceStatus(workspace, "done");
       currentRun = null;
       if (!recording) stopKeepAlive(); // an active recording still needs it
       emit({ kind: "idle" });

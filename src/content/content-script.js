@@ -21,7 +21,7 @@
     try {
       switch (msg.type) {
         case "cs_ping":
-          sendResponse({ ok: true });
+          sendResponse({ ok: true, url: location.href });
           return true;
         case "cs_read_page":
           sendResponse(readPage());
@@ -220,6 +220,8 @@
       /* ignore */
     }
     switch (msg.action) {
+      case "target":
+        return targetPoint(el);
       case "click":
         return click(el);
       case "type":
@@ -239,6 +241,25 @@
       default:
         return { ok: false, error: `Unknown action ${msg.action}` };
     }
+  }
+
+  // These points are local to this frame's viewport. Only top-frame points
+  // can be dispatched directly via CDP; nested frames use DOM input or click_at.
+  function targetPoint(el) {
+    const r = el.getBoundingClientRect();
+    const left = Math.max(0, r.left);
+    const right = Math.min(window.innerWidth, r.right);
+    const top = Math.max(0, r.top);
+    const bottom = Math.min(window.innerHeight, r.bottom);
+    if (right <= left || bottom <= top) return { ok: false, error: "Element is outside the visible viewport." };
+    const xs = [(left + right) / 2, left + (right - left) / 4, right - (right - left) / 4];
+    const ys = [(top + bottom) / 2, top + (bottom - top) / 4, bottom - (bottom - top) / 4];
+    const target = accessibleName(el).slice(0, 80) || el.tagName.toLowerCase();
+    for (const y of ys) for (const x of xs) {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && (el === hit || el.contains(hit))) return { ok: true, x, y, target };
+    }
+    return { ok: true, x: xs[0], y: ys[0], target, obstructed: true };
   }
 
   function hover(el) {

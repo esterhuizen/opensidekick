@@ -23,6 +23,16 @@ ok(evaluate("click_element", URL_A, cfg("all", "auto"), none).decision === "allo
 ok(evaluate("click_element", URL_A, cfg("all", "auto", { "https://example.com": "block" }), none).decision === "block",
   "all-mode: a blocked site blocks even in auto");
 
+// Coordinate input must use the SAME policy as click_element (including Auto).
+for (const action of ["click_element", "click_at", "drag_at"]) {
+  ok(evaluate(action, URL_A, cfg("all", "auto"), none).decision === "allow",
+    `${action}: Auto mode doesn't force confirmation on normal sites`);
+  ok(evaluate(action, URL_A, cfg("all", "ask"), none).decision === "prompt",
+    `${action}: Ask mode requires confirmation`);
+  ok(evaluate(action, URL_A, cfg("all", "auto", { "https://example.com": "block" }), none).decision === "block",
+    `${action}: explicit site blocks survive Auto mode`);
+}
+
 // --- Allowlist mode ---
 const alPrompt = evaluate("read_page", URL_A, cfg("allowlist", "auto"), none);
 ok(alPrompt.decision === "prompt" && alPrompt.newSite === true,
@@ -45,6 +55,16 @@ const bank = "https://www.chase.com/pay";
 const sens = evaluate("click_element", bank, cfg("allowlist", "auto", { "https://www.chase.com": "allow" }), none);
 ok(sens.decision === "prompt" && sens.sensitive === true,
   "allowlist: sensitive-site mutations still prompt per action even when allowed");
+
+for (const action of ["click_at", "drag_at"]) {
+  const sensitiveCoordinate = evaluate(action, bank, cfg("all", "auto"), none);
+  ok(sensitiveCoordinate.decision === "prompt" && sensitiveCoordinate.sensitive === true,
+    `${action}: sensitive sites continue to confirm in Auto mode`);
+}
+for (const action of ["click_at", "drag_at"]) {
+  ok(evaluate(action, URL_A, cfg("allowlist", "auto"), none).decision === "prompt",
+    `${action}: allowlist mode still asks for new origins`);
+}
 
 // Sets are disjoint sanity.
 ok([...PAGE_READ_TOOLS].every((t) => !MUTATING_TOOLS.has(t)),

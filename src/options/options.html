@@ -187,6 +187,14 @@
           </div>
 
           <div class="field">
+            <label class="radio"><input type="checkbox" id="enable-native-input" /> Use native browser mouse input <span class="chip warn">opt-in</span></label>
+            <p class="hint">Trusted mouse events for sites rejecting synthetic input. Adds screenshot-guided click_at for embedded players.</p>
+            <details class="more"><summary>Learn more</summary>
+              <p class="hint">Uses Chrome's debugger, which displays a debugging banner while attached. Coordinate clicks use CSS viewport pixels and must be aimed using a fresh screenshot.</p>
+            </details>
+          </div>
+
+          <div class="field">
             <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="chip warn">debugger banner</span></label>
             <p class="hint">Adds read_console and read_network for debugging pages.</p>
             <details class="more">
