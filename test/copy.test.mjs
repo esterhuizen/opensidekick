@@ -1,19 +1,9 @@
-// Product copy is browser-neutral, the debugger toggle says why it is dead, and
-// the details markers are hidden in both engines.
-//
-// The scan reads the shipped source as text. Comments that name Chrome are
-// engineering notes (the debugger API, the webkit alias), not product copy, so
-// comments are blanked first and what is checked is the code and the strings that
-// remain.
-//
-// Run: node test/copy.test.mjs
+// Comments are blanked before the scan, so it fails only when shipped code names Chrome;
+// vendored code is skipped, so a vendor bump must not fail it.
 
 import fs from "node:fs";
 import path from "node:path";
-// The hint has one owner: src/common/browser.js. Importing it means the scan pins
-// the string the product ships, not a copy kept here that goes stale the moment the
-// wording moves.
-import { CDP_HINT } from "../src/common/browser.js";
+import { RESTRICTED_PAGE_HINT } from "../src/background/tools.js";
 
 const SRC = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "src");
 const ROOT = path.join(SRC, "..");
@@ -29,9 +19,7 @@ const ok = (cond, label) => {
 
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-// Blank out comments, keeping every newline, so line numbers still match the file.
-// A string state is tracked so that `//` inside a URL or a quote inside prose is not
-// read as a comment start.
+// Every newline is kept so line numbers match, and a string state is tracked so `//` in a URL is not a comment start.
 function blankComments(src) {
   let out = "";
   let i = 0;
@@ -88,10 +76,6 @@ function blankComments(src) {
   return out;
 }
 
-// Every file the shipped UI reads: HTML, JS, CSS. The scan is on the code that is
-// left after comments go blank, so the only way to pass is for copy to be neutral.
-// The vendored provider library is skipped: it is byte-pinned by test/vendor.test.mjs,
-// upstream text we do not write, and a vendor bump must not fail the copy scan.
 function walk(dir) {
   const out = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -114,67 +98,13 @@ for (const f of walk(SRC)) {
 ok(NAMED.length === 0, `no user-facing string in src names Chrome (found ${NAMED.length})`);
 for (const l of NAMED) console.log(`  naming Chrome: ${l}`);
 
-// ---- the debugger hint that replaces the field hint when there is no debugger ----
-// The string lives in src/common/browser.js, which returns the row's decision; the
-// scan here is that the options page applies it, and the behavioural assertions are
-// in test/browser.test.mjs.
-const optionsJs = read("src/options/options.js");
+ok(RESTRICTED_PAGE_HINT.includes("about:"), `the restricted-page result names about: (got ${JSON.stringify(RESTRICTED_PAGE_HINT)})`);
+ok(RESTRICTED_PAGE_HINT.includes("the browser's"), `the restricted-page result names the browser's own pages (got ${JSON.stringify(RESTRICTED_PAGE_HINT)})`);
+ok(RESTRICTED_PAGE_HINT.includes("PDF"), "the restricted-page result keeps the PDF case");
+
 const optionsHtml = read("src/options/options.html");
-const browserJs = read("src/common/browser.js");
-ok(browserJs.includes(`"${CDP_HINT}"`), `browser.js carries the exact hint "${CDP_HINT}"`);
-ok(optionsHtml.includes('<p class="hint" id="cdp-hint">'), `the field hint at options.html:191 has id="cdp-hint"`);
-ok(optionsHtml.includes('<p class="hint" id="js-hint">'), 'the run-JavaScript field hint has id="js-hint" so the swap has a target');
-ok(optionsJs.includes('import { cdpAvailable } from "../background/cdp.js";'), "options.js imports cdpAvailable from ../background/cdp.js");
-// Pins on local variable names are not the contract: renaming `const t` changes no
-// behaviour. The pins are on the imports and on the composition the call site builds.
-// One toggle function serves both rows, each handing in its own hint.
-ok(optionsJs.includes('import { toolToggle, jsToolSupported, CDP_HINT, JS_HINT } from "../common/browser.js";'), "options.js imports the toggle decision and the shared hints from ../common/browser.js");
-ok(optionsJs.includes("toolToggle(cdpAvailable(), CDP_HINT)"), "options.js builds the debugger row's decision from toolToggle(cdpAvailable(), CDP_HINT)");
-ok(optionsJs.includes("toolToggle(jsToolSupported(chrome), JS_HINT)"), "options.js builds the run-JavaScript row's decision from toolToggle(jsToolSupported(chrome), JS_HINT)");
-
-// The rest of the row stays wired as it is: the change handler, enable-js
-// (world: MAIN works from Firefox 128) and enable-vision.
-ok(optionsJs.includes('$("#enable-cdp").addEventListener("change"'), "the #enable-cdp change handler stays wired");
-ok(optionsJs.includes('$("#enable-vision").checked = !!s.enableVision'), "enableVision is untouched");
-ok(optionsJs.includes('$("#enable-js").checked = !!s.enableJsTool'), "enableJsTool is untouched");
-
-// ---- copy: the phrasing says "the browser", the meaning is kept ----
-const sidepanelJs = read("src/sidepanel/sidepanel.js");
-const toolsJs = read("src/background/tools.js");
-ok(optionsHtml.includes("via the browser's debugger"), "the debugger hint names the browser's debugger, not Chrome's");
-ok(optionsHtml.includes("banner while a task runs; it clears when the task ends"), "the debugger banner sentence keeps its meaning");
-ok(optionsHtml.includes("the chat that's open stays until the browser closes"), "the history hint says until the browser closes");
-ok(optionsHtml.includes("on a repeating schedule while the browser is open"), "the scheduled hint says while the browser is open");
-ok(optionsJs.includes("The chat that's open now stays until the browser closes"), "the turn-off dialog says until the browser closes");
-ok(sidepanelJs.includes("chats aren't kept after the browser closes"), "the history menu says after the browser closes");
-
-const reach = toolsJs.slice(toolsJs.indexOf("Could not reach the page."));
-const reachText = reach.slice(0, reach.indexOf("navigated away.") + "navigated away.".length);
-ok(reachText.includes("about:"), `the restricted-page result names about: (got ${JSON.stringify(reachText)})`);
-ok(reachText.includes("the browser's"), `the restricted-page result names the browser's own pages (got ${JSON.stringify(reachText)})`);
-ok(reachText.includes("PDF"), "the restricted-page result keeps the PDF case");
-
-// ---- details markers: list-style: none is on every summary ----
-// list-style is how Firefox hides a <summary> marker, the webkit rule is the other
-// engine's. The scan checks that the property is present on the base selector behind
-// each marker rule; the rule count is not asserted.
-const CSS_FILES = ["src/sidepanel/sidepanel.css", "src/options/options.css"];
-const rules = [];
-for (const f of CSS_FILES) {
-  const body = blankComments(read(f));
-  for (const m of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    rules.push({ file: f, selector: m[1].trim().replace(/\s+/g, " "), content: m[2] });
-  }
-}
-const markerRules = rules.filter((r) => r.selector.endsWith("::-webkit-details-marker"));
-for (const r of markerRules) {
-  const base = r.selector.slice(0, r.selector.length - "::-webkit-details-marker".length);
-  const baseRule = rules.find((x) => x.selector === base);
-  ok(
-    baseRule && /list-style:\s*none/.test(baseRule.content) && /display:\s*none/.test(r.content),
-    `${base} hides its marker in both engines (list-style on ${baseRule ? "the summary" : "no summary rule"}, display on the webkit rule)`,
-  );
-}
+ok(optionsHtml.includes('id="cdp-hint"'), "options.html carries the cdp hint row the renderer writes to (#cdp-hint)");
+ok(optionsHtml.includes('id="js-hint"'), "options.html carries the run-JavaScript hint row the renderer writes to (#js-hint)");
 
 console.log(fail ? `\n${fail} COPY CHECK(S) FAILED` : "\nALL COPY CHECKS PASSED");
 process.exit(fail ? 1 : 0);

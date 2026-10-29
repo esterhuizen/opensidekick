@@ -12,7 +12,7 @@
 //
 // Run: node test/cdp.test.mjs
 
-import { cdpAvailable, ensureAttached, readConsole, readNetwork, detachAll } from "../src/background/cdp.js";
+import { cdpAvailable, ensureAttached, readConsole, readNetwork, detachAll, NO_DEBUGGER } from "../src/background/cdp.js";
 
 let fail = 0;
 const ok = (cond, label) => {
@@ -23,7 +23,7 @@ const ok = (cond, label) => {
   }
 };
 
-const DEGRADE = { ok: false, error: "Console/network reading is not available in this browser." };
+// The degrade object has one owner: src/background/cdp.js.
 const asJson = (o) => JSON.stringify(o);
 
 // Chrome defines lastError only while a trailing callback runs, so the fake sets it
@@ -97,9 +97,9 @@ ok(cdpAvailable() === false, "cdpAvailable: false on the Firefox namespace (no d
 const ffStart = lastErrorReads;
 
 const ffConsole = await readConsole(1);
-ok(asJson(ffConsole) === asJson(DEGRADE), `readConsole: the degrade object on Firefox (got ${asJson(ffConsole)})`);
+ok(ffConsole === NO_DEBUGGER, `readConsole: the degrade object on Firefox, the object cdp.js exports (got ${asJson(ffConsole)})`);
 const ffNetwork = await readNetwork(1, { urlPattern: "x", limit: 3 });
-ok(asJson(ffNetwork) === asJson(DEGRADE), `readNetwork: the degrade object on Firefox (got ${asJson(ffNetwork)})`);
+ok(ffNetwork === NO_DEBUGGER, `readNetwork: the degrade object on Firefox, the object cdp.js exports (got ${asJson(ffNetwork)})`);
 
 let ffEnsure;
 try {

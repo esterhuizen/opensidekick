@@ -644,33 +644,18 @@ function renderSettings() {
   $("#enable-vision").checked = !!s.enableVision;
   $("#enable-js").checked = !!s.enableJsTool;
   $("#enable-cdp").checked = !!s.enableCdp;
-  renderCdpAvailability();
-  renderJsAvailability();
+  // Dead setting on Firefox: no chrome.debugger, so a box the user can turn on would promise a tool that never runs.
+  renderToolRow("#enable-cdp", "#cdp-hint", cdpAvailable(), CDP_HINT);
+  // Dead on Firefox: world: "MAIN" scripting works from 128, so this is AMO's remote-code policy, not a missing API.
+  renderToolRow("#enable-js", "#js-hint", jsToolSupported(chrome), JS_HINT);
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();
 }
 
-// Firefox has no chrome.debugger, so this toggle is a dead setting: the agent
-// filter already drops the cdpOnly tools, and a box the user can turn on would
-// promise a tool that can never run. enableVision is left alone because Firefox
-// runs vision.
-function renderCdpAvailability() {
-  const t = toolToggle(cdpAvailable(), CDP_HINT);
-  $("#enable-cdp").disabled = t.disabled;
-  // options.html carries the row's own wording, so the hint is swapped only when
-  // the row is dead: a browser that can run the tools keeps the hint it shipped
-  // with, and the wording is the shared CDP_HINT from src/common/browser.js.
-  if (t.hint) $("#cdp-hint").textContent = CDP_HINT;
-}
-
-// The run-JavaScript row is dead on Firefox: world: "MAIN" scripting works from 128,
-// so this is AMO's remote-code policy on new Function over model output, not a
-// missing API. The setting is kept as stored, and the row is not user-enableable —
-// the agent filter drops the tool, so a box to turn it on would promise nothing.
-function renderJsAvailability() {
-  const t = toolToggle(jsToolSupported(chrome), JS_HINT);
-  $("#enable-js").disabled = t.disabled;
-  if (t.hint) $("#js-hint").textContent = JS_HINT;
+function renderToolRow(checkboxId, hintId, available, hint) {
+  const t = toolToggle(available, hint);
+  $(checkboxId).disabled = t.disabled;
+  if (t.hint) $(hintId).textContent = t.hint;
 }
 
 // -------------------------------------------------------------------------

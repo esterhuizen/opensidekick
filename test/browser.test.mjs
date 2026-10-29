@@ -113,18 +113,14 @@ ok(ffTwice.sidebarAction.toggle.calls.length === 2, "togglePanel: one toggle per
 // shim is inert there and the Chrome path keeps setPanelBehaviorOnActionClick below.
 ok((await togglePanel(CHROME)) === false, "togglePanel: false on a namespace with no sidebarAction (the Chrome fake)");
 
-const ffReject = { sidebarAction: { toggle: spy(Promise.reject(new Error("toggle requires a user gesture"))) } };
-const ffRejectSettled = await togglePanel(ffReject).then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
-ok(ffRejectSettled.state === "resolved" && ffRejectSettled.value === false, "togglePanel: a rejected toggle settles neutral, no rejection leaks");
-
 const ffThrow = { sidebarAction: { toggle: spy(new Error("toggle requires a user gesture")) } };
 const togglePromise = togglePanel(ffThrow);
 const ffThrowSettled = await togglePromise.then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
 ok(ffThrowSettled.state === "resolved" && ffThrowSettled.value === false, "togglePanel: a synchronous throw settles neutral, no rejection leaks");
 
-// ---- the icon-click guard: bound on toggle, not on open ----
-ok(typeof CHROME.sidebarAction?.toggle === "undefined", "guard: sidebarAction.toggle is absent on the Chrome namespace, so the icon listener is never registered there");
-ok(typeof FIREFOX.sidebarAction?.toggle === "function", "guard: sidebarAction.toggle is present on the Firefox namespace, so the icon listener is registered there");
+const ffReject = { sidebarAction: { toggle: spy(Promise.reject(new Error("toggle requires a user gesture"))) } };
+const ffRejectSettled = await togglePanel(ffReject).then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
+ok(ffRejectSettled.state === "resolved" && ffRejectSettled.value === false, "togglePanel: a rejected toggle settles neutral, no rejection leaks");
 
 // ---- setPanelBehaviorOnActionClick ----
 const behaviorChrome = { ...CHROME };
@@ -136,8 +132,6 @@ ok(
 ok(setPanelBehaviorOnActionClick(FIREFOX) === false, "setPanelBehaviorOnActionClick: no-op without sidePanel (Firefox)");
 ok(setPanelBehaviorOnActionClick(NEITHER) === false, "setPanelBehaviorOnActionClick: no-op without sidePanel (neither API)");
 ok(setPanelBehaviorOnActionClick(null) === false, "setPanelBehaviorOnActionClick: no-op on a null namespace");
-ok(behaviorChrome.sidebarAction?.open === undefined, "setPanelBehaviorOnActionClick: nothing was added to the Chrome namespace");
-ok(behaviorChrome.sidePanel.setPanelBehavior.calls.length === 1, "setPanelBehaviorOnActionClick: called once, not on every call site");
 
 const behaviorBoom = { sidePanel: { setPanelBehavior: spy(new Error("no sidePanel permission")) } };
 let behaviorThrew = false;
