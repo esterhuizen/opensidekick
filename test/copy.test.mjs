@@ -123,11 +123,14 @@ const optionsHtml = read("src/options/options.html");
 const browserJs = read("src/common/browser.js");
 ok(browserJs.includes(`"${CDP_HINT}"`), `browser.js carries the exact hint "${CDP_HINT}"`);
 ok(optionsHtml.includes('<p class="hint" id="cdp-hint">'), `the field hint at options.html:191 has id="cdp-hint"`);
+ok(optionsHtml.includes('<p class="hint" id="js-hint">'), 'the run-JavaScript field hint has id="js-hint" so the swap has a target');
 ok(optionsJs.includes('import { cdpAvailable } from "../background/cdp.js";'), "options.js imports cdpAvailable from ../background/cdp.js");
 // Pins on local variable names are not the contract: renaming `const t` changes no
 // behaviour. The pins are on the imports and on the composition the call site builds.
-ok(optionsJs.includes('import { cdpToggle, CDP_HINT } from "../common/browser.js";'), "options.js imports the toggle decision and the shared hint from ../common/browser.js");
-ok(optionsJs.includes("cdpToggle(cdpAvailable())"), "options.js builds the row's decision from cdpToggle(cdpAvailable())");
+// One toggle function serves both rows, each handing in its own hint.
+ok(optionsJs.includes('import { toolToggle, jsToolSupported, CDP_HINT, JS_HINT } from "../common/browser.js";'), "options.js imports the toggle decision and the shared hints from ../common/browser.js");
+ok(optionsJs.includes("toolToggle(cdpAvailable(), CDP_HINT)"), "options.js builds the debugger row's decision from toolToggle(cdpAvailable(), CDP_HINT)");
+ok(optionsJs.includes("toolToggle(jsToolSupported(chrome), JS_HINT)"), "options.js builds the run-JavaScript row's decision from toolToggle(jsToolSupported(chrome), JS_HINT)");
 
 // The rest of the row stays wired as it is: the change handler, enable-js
 // (world: MAIN works from Firefox 128) and enable-vision.

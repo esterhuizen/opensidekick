@@ -25,7 +25,7 @@ import {
   testDecisions,
 } from "../background/decisions.js";
 import { cdpAvailable } from "../background/cdp.js";
-import { cdpToggle, CDP_HINT } from "../common/browser.js";
+import { toolToggle, jsToolSupported, CDP_HINT, JS_HINT } from "../common/browser.js";
 
 let config;
 
@@ -645,21 +645,32 @@ function renderSettings() {
   $("#enable-js").checked = !!s.enableJsTool;
   $("#enable-cdp").checked = !!s.enableCdp;
   renderCdpAvailability();
+  renderJsAvailability();
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();
 }
 
 // Firefox has no chrome.debugger, so this toggle is a dead setting: the agent
 // filter already drops the cdpOnly tools, and a box the user can turn on would
-// promise a tool that can never run. enableJsTool (world: "MAIN" works from
-// Firefox 128) and enableVision are left alone because Firefox runs both.
+// promise a tool that can never run. enableVision is left alone because Firefox
+// runs vision.
 function renderCdpAvailability() {
-  const t = cdpToggle(cdpAvailable());
+  const t = toolToggle(cdpAvailable(), CDP_HINT);
   $("#enable-cdp").disabled = t.disabled;
   // options.html carries the row's own wording, so the hint is swapped only when
   // the row is dead: a browser that can run the tools keeps the hint it shipped
   // with, and the wording is the shared CDP_HINT from src/common/browser.js.
   if (t.hint) $("#cdp-hint").textContent = CDP_HINT;
+}
+
+// The run-JavaScript row is dead on Firefox: world: "MAIN" scripting works from 128,
+// so this is AMO's remote-code policy on new Function over model output, not a
+// missing API. The setting is kept as stored, and the row is not user-enableable —
+// the agent filter drops the tool, so a box to turn it on would promise nothing.
+function renderJsAvailability() {
+  const t = toolToggle(jsToolSupported(chrome), JS_HINT);
+  $("#enable-js").disabled = t.disabled;
+  if (t.hint) $("#js-hint").textContent = JS_HINT;
 }
 
 // -------------------------------------------------------------------------

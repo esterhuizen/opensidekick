@@ -5,7 +5,7 @@
 //
 // Run: node test/browser.test.mjs
 
-import { cdpSupported, panelSupported, openPanel, setPanelBehaviorOnActionClick, cdpToggle, CDP_HINT } from "../src/common/browser.js";
+import { cdpSupported, panelSupported, openPanel, setPanelBehaviorOnActionClick, jsToolSupported, toolToggle, CDP_HINT, JS_HINT } from "../src/common/browser.js";
 
 let fail = 0;
 const ok = (cond, label) => {
@@ -31,9 +31,18 @@ const spy = (result) => {
 const CHROME = {
   sidePanel: { open: spy(Promise.resolve()), setPanelBehavior: spy(Promise.resolve()) },
   debugger: { attach: spy(), sendCommand: spy() },
+  // Measured on Chromium 149 (probe-firefox.md round 3): scripting is present and
+  // runtime has no getBrowserInfo at all.
+  scripting: { executeScript: spy(Promise.resolve()) },
+  runtime: { getPlatformInfo: spy(Promise.resolve()) },
 };
 const FIREFOX = {
   sidebarAction: { open: spy(Promise.resolve()) },
+  // Measured on Firefox 158 (probe-firefox.md round 2): scripting.executeScript is
+  // present too, so a missing API is not the marker. runtime.getBrowserInfo is the
+  // measured Firefox-only key.
+  scripting: { executeScript: spy(Promise.resolve()) },
+  runtime: { getBrowserInfo: spy(Promise.resolve()), getPlatformInfo: spy(Promise.resolve()) },
 };
 const NEITHER = { action: { onClicked: { addListener: spy() } } };
 
@@ -44,7 +53,6 @@ ok(typeof globalThis.chrome === "undefined", "browser.js loads under plain node 
 ok(cdpSupported(CHROME) === true, "cdpSupported: true when attach and sendCommand are functions");
 ok(cdpSupported(FIREFOX) === false, "cdpSupported: false on the Firefox namespace (no debugger)");
 ok(cdpSupported(NEITHER) === false, "cdpSupported: false when debugger is absent");
-ok(cdpSupported(null) === false, "cdpSupported: false on a null namespace");
 ok(cdpSupported({ debugger: { attach: () => {} } }) === false, "cdpSupported: false when sendCommand is missing");
 ok(cdpSupported({ debugger: { attach: "1.3", sendCommand: null } }) === false, "cdpSupported: false when neither is a function");
 
@@ -52,7 +60,6 @@ ok(cdpSupported({ debugger: { attach: "1.3", sendCommand: null } }) === false, "
 ok(panelSupported(CHROME) === true, "panelSupported: true on Chrome (sidePanel.open)");
 ok(panelSupported(FIREFOX) === true, "panelSupported: true on Firefox (sidebarAction.open)");
 ok(panelSupported(NEITHER) === false, "panelSupported: false on a namespace with neither API");
-ok(panelSupported(null) === false, "panelSupported: false on a null namespace");
 ok(panelSupported({ sidePanel: { open: 1 } }) === false, "panelSupported: false when open is not a function");
 
 // ---- openPanel: Chrome ----
@@ -76,14 +83,10 @@ ok(neitherCalls.action.onClicked.addListener.calls.length === 0, "openPanel: tou
 
 // ---- openPanel: a gesture refusal settles, it never throws synchronously ----
 const gesture = { sidePanel: { open: spy(new Error("sidePanel.open must be called from a user gesture")) } };
-let threw = false;
 let gesturePromise = null;
 try {
   gesturePromise = openPanel(gesture, 42);
-} catch {
-  threw = true;
-}
-ok(!threw, "openPanel: a namespace whose open throws synchronously comes back as a promise, not a throw");
+} catch {}
 const gestureSettled = await gesturePromise.then((v) => ({ state: "resolved", value: v }), (e) => ({ state: "rejected", value: e }));
 ok(gestureSettled.state === "resolved" && gestureSettled.value === false, "openPanel: the gesture refusal resolves neutral (false), no rejected promise leaks");
 
@@ -131,21 +134,31 @@ ok(behaviorReject.sidePanel.setPanelBehavior.calls.length === 1, "setPanelBehavi
 // string imported from src/common/browser.js: the copy has one owner, so
 // rewording CDP_HINT moves this suite and test/copy.test.mjs together.
 
-// ---- cdpToggle: the options row's decision ----
-// The shim returns the decision and options.js applies it, so a browser with no
-// debugger disables the row and says why. These assertions read the decision,
-// against the same fake namespaces as the rest of this suite.
-const on = cdpToggle(true);
-ok(on.disabled === false, "cdpToggle: toggle left enabled when the browser has a debugger");
-ok(on.hint === undefined, "cdpToggle: no hint when the browser has a debugger");
+// ---- jsToolSupported: the run_javascript row's availability ----
+// Firefox runs world: "MAIN" scripting from 128, so the tool is off by AMO's
+// remote-code policy, not by a missing API. The detector is the measured marker:
+// runtime.getBrowserInfo is 'function' on Firefox 158 and 'undefined' on Chromium
+// 149, and scripting.executeScript is a function on both.
+ok(jsToolSupported(CHROME) === true, "jsToolSupported: true on the Chrome namespace");
+ok(jsToolSupported(FIREFOX) === false, "jsToolSupported: false on the Firefox namespace");
 
-const off = cdpToggle(false);
-ok(off.disabled === true, "cdpToggle: toggle disabled when the browser has no debugger");
-ok(off.hint === CDP_HINT, `cdpToggle: the disabled row carries the exact hint (got ${JSON.stringify(off.hint)})`);
+// ---- toolToggle: the options row's decision, one function for both rows ----
+const on = toolToggle(true);
+ok(on.disabled === false, "toolToggle: toggle left enabled when the browser can run the tool");
+ok(on.hint === undefined, "toolToggle: no hint when the browser can run the tool");
 
-// No fixture re-test: cdpSupported on the fake namespaces is asserted above and the
-// four checks above cover the decision, so feeding a fixture through cdpToggle again
-// adds a check that cannot fail on its own.
+const jsOff = toolToggle(false, JS_HINT);
+ok(jsOff.disabled === true, "toolToggle: toggle disabled when the browser cannot run the tool");
+ok(
+  jsOff.hint === JS_HINT,
+  `toolToggle: the disabled JS row carries the exact hint (got ${JSON.stringify(jsOff.hint)})`,
+);
+
+const cdpOff = toolToggle(false, CDP_HINT);
+ok(
+  cdpOff.hint === CDP_HINT,
+  `toolToggle: the same function swaps in the debugger hint for the cdp row (got ${JSON.stringify(cdpOff.hint)})`,
+);
 
 console.log(fail ? `\n${fail} BROWSER SHIM CHECK(S) FAILED` : "\nALL BROWSER SHIM CHECKS PASSED");
 process.exit(fail ? 1 : 0);

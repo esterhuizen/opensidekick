@@ -17,13 +17,24 @@ export function cdpSupported(ns) {
 // read one string: rewording it is a single edit with no copy to keep in sync.
 export const CDP_HINT = "Not available in this browser (no debugger API)";
 
-// The options row for the debugger-backed tools: a browser with no debugger gets a
+export const JS_HINT = "Not available in this browser (no code execution)";
+
+// The options rows for the optional tools: a browser that cannot run a tool gets a
 // disabled toggle plus copy saying why, because a box the user can turn on would
-// promise a tool that can never run. The decision comes back as data, so the
-// options page applies it and `test/browser.test.mjs` can read it.
-export function cdpToggle(available) {
+// promise a tool that can never run. The decision comes back as data, so the options
+// page applies it and `test/browser.test.mjs` can read it. One function, the row
+// hands in its own hint, so the rows do not clone each other.
+export function toolToggle(available, hint) {
   if (available) return { disabled: false };
-  return { disabled: true, hint: CDP_HINT };
+  return { disabled: true, hint };
+}
+
+// AMO's remote-code policy flags running model-generated code through `new Function`,
+// so the tool is off in the Firefox build — a missing API is NOT the reason, Firefox
+// runs `world: "MAIN"` scripting from 128. The Firefox marker is runtime.getBrowserInfo:
+// a function in Firefox 158, undefined in Chromium 149.
+export function jsToolSupported(ns) {
+  return typeof ns?.runtime?.getBrowserInfo !== "function";
 }
 
 export function panelSupported(ns) {

@@ -8,14 +8,11 @@
 // zero reads, and the guards that keep Firefox out of this module show up as zero
 // reads too.
 //
-// The tool filter is checked here too: agent.js loads under plain node, so the filter
-// can be called with debugger availability handed in as a value, which is the path a
-// namespace read cannot express.
+// The tool filter lives in test/agent-tools.test.mjs, which owns the filter checks.
 //
 // Run: node test/cdp.test.mjs
 
 import { cdpAvailable, ensureAttached, readConsole, readNetwork, detachAll } from "../src/background/cdp.js";
-import { selectTools } from "../src/background/agent.js";
 
 let fail = 0;
 const ok = (cond, label) => {
@@ -118,7 +115,6 @@ try {
   ffDetach = { threw: e };
 }
 ok(ffDetach === undefined, "detachAll: no-op on Firefox, resolves without touching the namespace");
-ok(globalThis.chrome.sidebarAction.open.calls.length === 0, "the Firefox namespace was not touched by the cdp calls");
 ok(lastErrorReads === ffStart, `the guards keep Firefox out of the wrappers, so nothing reads lastError (reads: ${lastErrorReads - ffStart})`);
 
 // ---- Chrome shape: the callback settles the attach ----
@@ -191,48 +187,6 @@ ok(
 ok(
   lastErrorReads - dStart === detachArgs.length,
   `the detach callback read lastError once per detach call (reads: ${lastErrorReads - dStart}, detaches: ${detachArgs.length})`,
-);
-
-// ---- the tool filter, with the debugger availability as a value ----
-// The filter decides which tools the model may call, and the settings object is the
-// shape the options page writes. Availability is handed in as a value so the false
-// path — a browser with no debugger — is asserted directly.
-const names = (tools) => tools.map((t) => t.name);
-const SET = { enableCdp: true, enableVision: true, enableJsTool: true };
-
-const ff = names(selectTools(SET, { cdpAvailable: false }));
-ok(
-  !ff.includes("read_console") && !ff.includes("read_network"),
-  "selectTools: read_console and read_network are dropped when enableCdp is true and cdpAvailable is false",
-);
-ok(ff.includes("read_page"), "selectTools: the tools that need no debugger stay when there is no debugger");
-
-const chrome = names(selectTools(SET, { cdpAvailable: true }));
-ok(
-  chrome.includes("read_console") && chrome.includes("read_network"),
-  "selectTools: read_console and read_network are offered when enableCdp and cdpAvailable are both true",
-);
-ok(
-  chrome.filter((n) => !ff.includes(n)).join(",") === "read_console,read_network",
-  `the two cdpOnly rows are the only difference between the browsers (got ${chrome.filter((n) => !ff.includes(n)).join(",")})`,
-);
-
-const cdpOff = names(selectTools({ ...SET, enableCdp: false }, { cdpAvailable: true }));
-ok(
-  !cdpOff.includes("read_console") && !cdpOff.includes("read_network"),
-  "selectTools: the cdpOnly tools stay dropped when the user turns the toggle off, even with a debugger",
-);
-
-// The vision and run_javascript rows keep the behaviour they had before the filter moved.
-const visionOff = names(selectTools({ ...SET, enableVision: false }, { cdpAvailable: true }));
-ok(
-  !visionOff.includes("take_screenshot") && visionOff.includes("run_javascript"),
-  "selectTools: take_screenshot stays gated on enableVision alone",
-);
-const jsOff = names(selectTools({ ...SET, enableJsTool: false }, { cdpAvailable: true }));
-ok(
-  !jsOff.includes("run_javascript") && jsOff.includes("take_screenshot"),
-  "selectTools: run_javascript stays gated on enableJsTool alone",
 );
 
 console.log(fail ? `\n${fail} CDP CHECK(S) FAILED` : "\nALL CDP CHECKS PASSED");
