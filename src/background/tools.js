@@ -6,6 +6,12 @@ import { normalizeTarget } from "./permissions.js";
 import { MSG } from "../common/constants.js";
 import { readConsole, readNetwork } from "./cdp.js";
 
+// The page list is the product's claim about the engine, so it has one owner here.
+export const RESTRICTED_PAGE_HINT =
+  "Could not reach the page. It may be a restricted page (chrome://, about: " +
+  "pages, the browser's own extensions or add-ons store, or a PDF), or it " +
+  "navigated away.";
+
 export const TOOL_DEFS = [
   {
     name: "read_page",
@@ -363,12 +369,7 @@ async function csSend(tabId, msg) {
     const res = await chrome.tabs.sendMessage(tabId, msg);
     return res ?? { ok: false, error: "No response from page." };
   } catch (e) {
-    return {
-      ok: false,
-      error:
-        "Could not reach the page. It may be a restricted page (chrome://, the " +
-        "Chrome Web Store, or a PDF), or it navigated away.",
-    };
+    return { ok: false, error: RESTRICTED_PAGE_HINT };
   }
 }
 

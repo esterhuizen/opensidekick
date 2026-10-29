@@ -1435,7 +1435,7 @@ function renderHistoryMenu(res) {
     return;
   }
   if (!res.enabled) {
-    els.histBody.innerHTML = `<div class="hist-off"><p>Chat history is off, so chats aren't kept after Chrome closes.</p><button type="button" class="hist-settings">Turn on in Settings</button></div>`;
+    els.histBody.innerHTML = `<div class="hist-off"><p>Chat history is off, so chats aren't kept after the browser closes.</p><button type="button" class="hist-settings">Turn on in Settings</button></div>`;
     return;
   }
   if (!histItems.length) {

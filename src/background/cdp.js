@@ -6,6 +6,14 @@
 //
 // Buffers capture activity that happens AFTER attach — to see load-time errors,
 // the agent can read once (attaching), reload, then read again.
+// chrome.debugger is Chrome-only, so on Firefox this module is inert: the guards
+// answer "no debugger" before any wrapper runs, and no attach is ever sent.
+
+import { cdpSupported } from "../common/browser.js";
+
+// Hand back verbatim — this is the text the user sees; the suites read the shipped
+// string as data, so a rewording stays one edit here.
+export const NO_DEBUGGER = { ok: false, error: "Console/network reading is not available in this browser." };
 
 const attached = new Map(); // tabId -> { console: [], network: Map(requestId -> rec) }
 let listenerBound = false;
@@ -13,7 +21,16 @@ let listenerBound = false;
 const MAX_CONSOLE = 500;
 const MAX_NETWORK = 500;
 
+// Wrapper kept: test/cdp-scope.test.mjs pins this signature, and moving the default
+// into src/common/browser.js would put a `globalThis.chrome` read inside the module
+// AGENTS.md keeps chrome.*-free. Upgrade when the guard pins read the shipped guard as
+// data, the way browser.test.mjs reads CDP_HINT.
+export function cdpAvailable(ns = globalThis.chrome) {
+  return cdpSupported(ns);
+}
+
 export async function ensureAttached(tabId) {
+  if (!cdpAvailable()) return;
   if (attached.has(tabId)) return;
   bindListeners();
   await debuggerAttach(tabId);
@@ -26,6 +43,7 @@ export async function ensureAttached(tabId) {
 
 export async function readConsole(tabId, opts = {}) {
   const { onlyErrors = false, limit = 50 } = opts;
+  if (!cdpAvailable()) return NO_DEBUGGER;
   await ensureAttached(tabId);
   let items = attached.get(tabId).console;
   if (onlyErrors) items = items.filter((i) => /error|warning/i.test(i.level || ""));
@@ -41,6 +59,7 @@ export async function readConsole(tabId, opts = {}) {
 
 export async function readNetwork(tabId, opts = {}) {
   const { urlPattern, limit = 50 } = opts;
+  if (!cdpAvailable()) return NO_DEBUGGER;
   await ensureAttached(tabId);
   let items = [...attached.get(tabId).network.values()];
   if (urlPattern) {
@@ -62,6 +81,7 @@ export async function readNetwork(tabId, opts = {}) {
 
 // Called at the end of every task so the debugger banner goes away.
 export async function detachAll() {
+  if (!cdpAvailable()) return;
   for (const tabId of [...attached.keys()]) {
     await debuggerDetach(tabId);
     attached.delete(tabId);

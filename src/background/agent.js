@@ -10,6 +10,8 @@ import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { touchesSensitiveSite } from "./sessions.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
 import { resolveSource, classifyInjection, classifyAction, createBreaker, thresholdFor, featureEnabled } from "./decisions.js";
+import { cdpAvailable } from "./cdp.js";
+import { jsToolSupported } from "../common/browser.js";
 
 const SYSTEM_PROMPT = `You are OpenSidekick, a browser assistant that can read and act on the web page the user is looking at, on their behalf, using tools.
 
@@ -75,21 +77,22 @@ async function tabUrl(tabId) {
   }
 }
 
+export function selectTools(settings, { cdpAvailable, jsAvailable }) {
+  return TOOL_DEFS.filter((t) => {
+    if (t.visionOnly && !settings.enableVision) return false;
+    if (t.jsOnly && !(settings.enableJsTool && jsAvailable)) return false;
+    if (t.cdpOnly && !(settings.enableCdp && cdpAvailable)) return false;
+    return true;
+  });
+}
+
 export async function runAgent(deps) {
   const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, saveSitePermission } = deps;
   const identity = identityNotes(config, provider);
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
-  // Offer optional tools only when the user has enabled them: vision (needs a
-  // multimodal model), the run_javascript escape hatch, and the debugger-backed
-  // console/network readers.
   const s = config.settings;
-  const tools = TOOL_DEFS.filter((t) => {
-    if (t.visionOnly && !s.enableVision) return false;
-    if (t.jsOnly && !s.enableJsTool) return false;
-    if (t.cdpOnly && !s.enableCdp) return false;
-    return true;
-  });
+  const tools = selectTools(s, { cdpAvailable: cdpAvailable(), jsAvailable: jsToolSupported(chrome) });
 
   // Connect enabled MCP servers and add their tools to the model's toolset.
   const mcpDispatch = new Map(); // localName -> { server, session, remoteName }

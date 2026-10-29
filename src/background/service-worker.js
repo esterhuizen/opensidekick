@@ -42,6 +42,7 @@ import { detachAll } from "./cdp.js";
 import { ensureContentScript } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
+import { openPanel, togglePanel, setPanelBehaviorOnActionClick } from "../common/browser.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -271,7 +272,7 @@ async function reconcileHistory() {
 // Lifecycle
 // -------------------------------------------------------------------------
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  setPanelBehaviorOnActionClick(chrome);
   chrome.contextMenus.create({
     id: "ask-opensidekick",
     title: 'Ask OpenSidekick about "%s"',
@@ -292,6 +293,14 @@ chrome.runtime.onStartup.addListener(() => {
   reconcileAlarms();
   withHistory(reconcileHistory).catch(() => {});
 });
+
+// Firefox has no sidePanel, so the icon click needs its own listener: setPanelBehavior
+// above is Chrome-only. Guarded by sidebarAction.toggle so Chrome gets no second listener.
+function bindIconClickToPanel() {
+  if (typeof chrome.sidebarAction?.toggle !== "function") return;
+  chrome.action.onClicked.addListener(() => togglePanel(chrome));
+}
+bindIconClickToPanel();
 
 // Apply one-time config migrations to an existing stored config. Does nothing on
 // a fresh install (no stored config yet), so it can't clobber a config that's
@@ -354,8 +363,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!task) return;
   pendingSeed = task;
   if (tab && tab.id != null) {
+    // The try/catch stays: openPanel resolves neutral on a refusal, so this guards a namespace that throws outright.
     try {
-      await chrome.sidePanel.open({ tabId: tab.id });
+      await openPanel(chrome, tab.id);
     } catch {
       /* user may need to click the icon */
     }
