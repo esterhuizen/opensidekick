@@ -1,28 +1,7 @@
-// Packages the extension for Firefox by transforming manifest.json into
-// dist/firefox/manifest.json. The shipped Chrome manifest is the single source
-// of truth and is never written, so a packaging-only change cannot silently
-// move the capability surface.
-//
-// Firefox has no MV3 service worker: a background is declared as
-// `background.scripts` (module), not `service_worker`, and `persistent` is
-// rejected in MV3.
-//
-// Firefox has no `side_panel`; `sidebar_action` is the equivalent and needs no
-// extra permission (w3c/webextensions #387), so `sidePanel` is dropped and no
-// `sidebar` permission is added.
-//
-// Firefox has no `chrome.debugger`, so the `debugger` permission is dropped;
-// the console/network tools degrade to "not available" in the code.
-//
-// AMO rules: `name` capped at 45 chars, `strict_min_version` 140.0 (first
-// Firefox with MV3 module background scripts), and no
-// `minimum_chrome_version`, `strict_max_version` (fails AMO schema) or gecko_android.
-//
-// The add-on `id` is permanent and the `data_collection_permissions` disclosure
-// has to match what is really sent to the model provider, so both are the
-// owner's to set at submission — this build ships neither.
-//
-// Run: node scripts/build-firefox.mjs
+// Firefox gaps, measured: no MV3 service worker (`background.scripts` module,
+// `persistent` rejected), no `side_panel` (`sidebar_action` replaces it, no extra
+// permission), no `chrome.debugger`. AMO caps: `name` 45 chars, `strict_min_version`
+// 140.0, no `strict_max_version` (fails the AMO schema), no gecko_android.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -31,29 +10,27 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = join(ROOT, "dist", "firefox");
 
-// Verbatim AMO contract values.
 const FF_NAME = "OpenSidekick — Bring Your Own LLM Agent"; // 39 chars, base name is 47
 const STRICT_MIN_VERSION = "140.0";
 const SIDEBAR_PANEL = "src/sidepanel/sidepanel.html";
 const SIDEBAR_TITLE = "OpenSidekick";
-const ACTION_TITLE = "Open OpenSidekick (Ctrl+Shift+E / Cmd+Shift+E)";
+// Ctrl+Shift+E is the Firefox Network Monitor. Ctrl+Shift+Q quits Firefox on
+// Windows/Linux, and Shift-Command-Q logs the user out of macOS: a key the browser
+// already uses is accepted by the manifest and the handler is never called. So the
+// key is U, measured free in Firefox 158.0.1.
+const ACTION_TITLE = "Open OpenSidekick (Ctrl+Shift+U / Cmd+Shift+U)";
 const SIDEBAR_COMMAND = "_execute_sidebar_action";
-const SUGGESTED_KEY = { default: "Ctrl+Shift+E", mac: "Command+Shift+E" };
+const SUGGESTED_KEY = { default: "Ctrl+Shift+U", mac: "Command+Shift+U" };
 const COMMAND_DESCRIPTION = "Open the OpenSidekick sidebar";
 
-// `sidePanel` has no Firefox equivalent to grant, and `debugger` does not exist
-// in Firefox; keeping either would claim a permission the code cannot use.
+// Keeping either would claim a permission the code cannot use.
 const DROPPED_PERMISSIONS = ["sidePanel", "debugger"];
 
-/**
- * The transform: base Chrome manifest in, Firefox manifest out. Pure — it does
- * no I/O, so `test/firefox-build.test.mjs` can assert the whole contract in
- * memory against `manifest.json`.
- */
+/** Pure transform, base manifest in, Firefox manifest out — no I/O, so the contract is asserted in memory. */
 export function firefoxManifest(base) {
   const out = {};
   for (const key of Object.keys(base)) {
-    if (key === "minimum_chrome_version") continue; // Chrome-only floor
+    if (key === "minimum_chrome_version") continue;
     if (key === "side_panel") {
       out.sidebar_action = {
         default_title: SIDEBAR_TITLE,
@@ -87,19 +64,16 @@ export function firefoxManifest(base) {
       };
       continue;
     }
-    // Deep-clone every carried-over value so the returned manifest can never
-    // alias the base — mutating the Firefox manifest must not reach the Chrome one.
+    // Deep-clone so mutating the output cannot reach the base manifest.
     out[key] = structuredClone(base[key]);
   }
   out.browser_specific_settings = {
-    // The version floor only; see the AMO note in the header.
     gecko: { strict_min_version: STRICT_MIN_VERSION },
   };
   return out;
 }
 
-// One line per key the transform touched, so the console output of
-// `npm run build:firefox` is the contract, not a silent copy.
+// One line per key the transform touched, so the build output is the contract.
 function keyDetail(key, b, o) {
   if (key === "name") return `${JSON.stringify(b)} → ${JSON.stringify(o)} (${o.length} chars)`;
   if (key === "action") return `default_title → ${JSON.stringify(o.default_title)}; default_icon unchanged`;
@@ -136,16 +110,13 @@ function buildFromDisk() {
   const base = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
   const out = firefoxManifest(base);
 
-  // Fresh tree every run: a stale dist/firefox/ can keep a deleted source file,
-  // including the byte-pinned vendor files. Only dist/ is ever written.
+  // A stale dist/firefox/ keeps a deleted source file, including the vendor files.
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });
 
   for (const row of summaryRows(base, out)) console.log(row);
   writeFileSync(join(OUT_DIR, "manifest.json"), JSON.stringify(out, null, 2) + "\n");
 
-  // The Chrome source is copied, not rewritten, so `src/common/vendor/**` stays
-  // byte-identical under the pin in test/vendor.test.mjs.
   const copies = [["src", "src"], ["icons", "icons"], ["LICENSE", "LICENSE"]];
   for (const [from, to] of copies) {
     cpSync(join(ROOT, from), join(OUT_DIR, to), { recursive: true });
@@ -154,7 +125,6 @@ function buildFromDisk() {
   console.log(`wrote ${relative(ROOT, join(OUT_DIR, "manifest.json"))}`);
 }
 
-// ---- Driver (runs last, and only when this file is executed directly) ----
 if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
   buildFromDisk();
 }

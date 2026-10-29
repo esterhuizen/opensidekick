@@ -5,7 +5,7 @@
 //
 // Run: node test/browser.test.mjs
 
-import { cdpSupported, panelSupported, openPanel, setPanelBehaviorOnActionClick, jsToolSupported, toolToggle, CDP_HINT, JS_HINT } from "../src/common/browser.js";
+import { cdpSupported, panelSupported, openPanel, togglePanel, setPanelBehaviorOnActionClick, jsToolSupported, toolToggle, CDP_HINT, JS_HINT } from "../src/common/browser.js";
 
 let fail = 0;
 const ok = (cond, label) => {
@@ -31,16 +31,17 @@ const spy = (result) => {
 const CHROME = {
   sidePanel: { open: spy(Promise.resolve()), setPanelBehavior: spy(Promise.resolve()) },
   debugger: { attach: spy(), sendCommand: spy() },
-  // Measured on Chromium 149 (probe-firefox.md round 3): scripting is present and
-  // runtime has no getBrowserInfo at all.
+  // Measured on Chromium 149: scripting is present and runtime has no
+  // getBrowserInfo at all.
   scripting: { executeScript: spy(Promise.resolve()) },
   runtime: { getPlatformInfo: spy(Promise.resolve()) },
 };
 const FIREFOX = {
-  sidebarAction: { open: spy(Promise.resolve()) },
-  // Measured on Firefox 158 (probe-firefox.md round 2): scripting.executeScript is
-  // present too, so a missing API is not the marker. runtime.getBrowserInfo is the
-  // measured Firefox-only key.
+  // sidebarAction.open and sidebarAction.toggle are both 'function' in Firefox 158;
+  // toggle is the one that closes the sidebar on a second icon click.
+  sidebarAction: { open: spy(Promise.resolve()), toggle: spy(Promise.resolve()) },
+  // Measured on Firefox 158: scripting.executeScript is present too, so a missing
+  // API is not the marker. runtime.getBrowserInfo is the measured Firefox-only key.
   scripting: { executeScript: spy(Promise.resolve()) },
   runtime: { getBrowserInfo: spy(Promise.resolve()), getPlatformInfo: spy(Promise.resolve()) },
 };
@@ -81,12 +82,10 @@ const neitherOpen = await openPanel(neitherCalls, 42);
 ok(neitherOpen === undefined, "openPanel: resolves on a namespace with neither API");
 ok(neitherCalls.action.onClicked.addListener.calls.length === 0, "openPanel: touches nothing when neither API is present");
 
-// ---- openPanel: a gesture refusal settles, it never throws synchronously ----
+// The shim's contract: a gesture refusal resolves neutral, it never throws
+// synchronously, so the caller's promise is always the one to await.
 const gesture = { sidePanel: { open: spy(new Error("sidePanel.open must be called from a user gesture")) } };
-let gesturePromise = null;
-try {
-  gesturePromise = openPanel(gesture, 42);
-} catch {}
+const gesturePromise = openPanel(gesture, 42);
 const gestureSettled = await gesturePromise.then((v) => ({ state: "resolved", value: v }), (e) => ({ state: "rejected", value: e }));
 ok(gestureSettled.state === "resolved" && gestureSettled.value === false, "openPanel: the gesture refusal resolves neutral (false), no rejected promise leaks");
 
@@ -99,9 +98,33 @@ const rejection = { sidePanel: { open: spy(Promise.reject(new Error("no tab"))) 
 const rejectedSettled = await openPanel(rejection, 42).then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
 ok(rejectedSettled.state === "resolved" && rejectedSettled.value === false, "openPanel: a rejected API promise settles neutral, not as a rejection");
 
-// ---- the icon-click guard: inert in Chrome ----
-ok(typeof CHROME.sidebarAction?.open === "undefined", "guard: sidebarAction.open is absent on the Chrome namespace, so the icon listener is never registered there");
-ok(typeof FIREFOX.sidebarAction?.open === "function", "guard: sidebarAction.open is present on the Firefox namespace, so the icon listener is registered there");
+// ---- togglePanel: the icon click toggles the sidebar, so a second click closes it ----
+const ffToggleCalls = { sidebarAction: { toggle: spy(Promise.resolve()) } };
+const ffToggled = await togglePanel(ffToggleCalls);
+ok(ffToggleCalls.sidebarAction.toggle.calls[0].length === 0, "togglePanel: calls sidebarAction.toggle() once with no arguments");
+ok(ffToggled === true, "togglePanel: resolves true when the toggle ran");
+
+const ffTwice = { sidebarAction: { toggle: spy(Promise.resolve()) } };
+await togglePanel(ffTwice);
+await togglePanel(ffTwice);
+ok(ffTwice.sidebarAction.toggle.calls.length === 2, "togglePanel: one toggle per icon click, so a second click closes the sidebar");
+
+// Chrome has no sidebarAction at all (measured 'undefined' on Chromium 149), so the
+// shim is inert there and the Chrome path keeps setPanelBehaviorOnActionClick below.
+ok((await togglePanel(CHROME)) === false, "togglePanel: false on a namespace with no sidebarAction (the Chrome fake)");
+
+const ffReject = { sidebarAction: { toggle: spy(Promise.reject(new Error("toggle requires a user gesture"))) } };
+const ffRejectSettled = await togglePanel(ffReject).then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
+ok(ffRejectSettled.state === "resolved" && ffRejectSettled.value === false, "togglePanel: a rejected toggle settles neutral, no rejection leaks");
+
+const ffThrow = { sidebarAction: { toggle: spy(new Error("toggle requires a user gesture")) } };
+const togglePromise = togglePanel(ffThrow);
+const ffThrowSettled = await togglePromise.then((v) => ({ state: "resolved", value: v }), () => ({ state: "rejected" }));
+ok(ffThrowSettled.state === "resolved" && ffThrowSettled.value === false, "togglePanel: a synchronous throw settles neutral, no rejection leaks");
+
+// ---- the icon-click guard: bound on toggle, not on open ----
+ok(typeof CHROME.sidebarAction?.toggle === "undefined", "guard: sidebarAction.toggle is absent on the Chrome namespace, so the icon listener is never registered there");
+ok(typeof FIREFOX.sidebarAction?.toggle === "function", "guard: sidebarAction.toggle is present on the Firefox namespace, so the icon listener is registered there");
 
 // ---- setPanelBehaviorOnActionClick ----
 const behaviorChrome = { ...CHROME };

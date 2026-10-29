@@ -61,6 +61,22 @@ export async function openPanel(ns, tabId) {
   }
 }
 
+// The icon click toggles the sidebar in Firefox, so a second click closes it —
+// `sidebarAction.toggle()` is the whole behaviour. It is gesture-bound like `open()`
+// and takes no arguments, so a refusal settles neutral, never as a rejection.
+// Chrome has no `sidebarAction` (measured 'undefined' on Chromium 149), so this is
+// inert there and the Chrome path keeps setPanelBehaviorOnActionClick below. It is
+// NOT merged into openPanel: the context-menu path opens, the icon click toggles.
+export async function togglePanel(ns) {
+  if (typeof ns?.sidebarAction?.toggle !== "function") return false;
+  try {
+    await ns.sidebarAction.toggle();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // The icon click opens the panel in Chrome only; Firefox has no
 // setPanelBehavior, and its icon click is handled by its own listener.
 export function setPanelBehaviorOnActionClick(ns) {

@@ -1,9 +1,5 @@
-// Contract test for the Firefox packaging transform: the shipped Chrome
-// manifest in, the AMO-shaped manifest out. The transform runs in memory, so
-// nothing is written to disk — this is the seam that keeps `manifest.json`,
-// the repo's capability surface, byte-identical under a packaging-only change.
-//
-// Run: node test/firefox-build.test.mjs
+// The transform runs in memory, so `manifest.json`, the repo's capability surface,
+// stays byte-identical under a packaging-only change.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,8 +24,7 @@ const ok = (cond, label) => {
   }
 };
 
-// Verbatim from the AMO contract: Firefox caps `name` at 45 chars, so the
-// Chrome name ("OpenSidekick — Bring-Your-Own-LLM Browser Agent", 47) is too long.
+// AMO caps `name` at 45 chars; the Chrome name is 47, so it is too long.
 const AMO_NAME = "OpenSidekick — Bring Your Own LLM Agent";
 const SIDEBAR_PANEL = "src/sidepanel/sidepanel.html";
 
@@ -40,12 +35,10 @@ const out = firefoxManifest(base);
 const bgs = out.background ?? {};
 const gecko = out.browser_specific_settings?.gecko ?? {};
 
-// ---- Keys that must survive unchanged ----
 for (const key of ["manifest_version", "version", "short_name", "description", "author", "homepage_url", "icons", "content_scripts", "host_permissions"]) {
   eq(out[key], base[key], `${key} unchanged`);
 }
 
-// ---- AMO name limit ----
 eq(out.name, AMO_NAME, "name is the AMO string with the em dash");
 
 for (const key of ["minimum_chrome_version", "side_panel"]) {
@@ -56,38 +49,34 @@ ok(!("persistent" in bgs), "no background.persistent");
 ok(!("strict_max_version" in gecko), "no gecko.strict_max_version");
 ok(!("gecko_android" in (out.browser_specific_settings ?? {})), "no gecko_android block");
 
-// ---- Background script module ----
 eq(bgs.scripts, [base.background.service_worker], "background.scripts is the base worker path");
 eq(bgs.type, "module", "background.type is module");
 
-// ---- sidebar_action replaces side_panel ----
 eq(out.sidebar_action, { default_title: "OpenSidekick", default_panel: SIDEBAR_PANEL, open_at_install: false }, "sidebar_action is the exact contract object");
 eq(out.sidebar_action?.default_panel, base.side_panel.default_path, "sidebar_action.default_panel === base side_panel.default_path");
 
-// ---- Permissions: drop sidePanel + debugger, add nothing ----
 const KEEP = base.permissions.filter((p) => p !== "sidePanel" && p !== "debugger");
 eq(out.permissions, KEEP, "permissions keeps every base permission except sidePanel and debugger, in base order");
 
-// ---- The keyboard command ----
 eq(Object.keys(out.commands ?? {}), ["_execute_sidebar_action"], "commands keys are exactly [_execute_sidebar_action]");
-eq(out.commands?._execute_sidebar_action?.suggested_key, { default: "Ctrl+Shift+E", mac: "Command+Shift+E" }, "the suggested key is Ctrl+Shift+E / Command+Shift+E");
+eq(out.commands?._execute_sidebar_action?.suggested_key?.default, "Ctrl+Shift+U", "suggested key is Ctrl+Shift+U");
+eq(out.commands?._execute_sidebar_action?.suggested_key?.mac, "Command+Shift+U", "mac key is Command+Shift+U");
 eq(out.commands?._execute_sidebar_action?.description, "Open the OpenSidekick sidebar", "the command description is the sidebar wording");
 
-// ---- Action title names the new shortcut; the icon is untouched ----
-eq(out.action?.default_title, "Open OpenSidekick (Ctrl+Shift+E / Cmd+Shift+E)", "action.default_title mentions Ctrl+Shift+E");
+eq(out.action?.default_title, "Open OpenSidekick (Ctrl+Shift+U / Cmd+Shift+U)", "the action title names the key");
 eq(out.action?.default_icon, base.action.default_icon, "action.default_icon unchanged");
 
-// ---- browser_specific_settings.gecko ----
+// The old key must be gone from every byte, not just from commands.
+ok(!JSON.stringify(out).includes("Ctrl+Shift+E"), "no Ctrl+Shift+E anywhere in the Firefox manifest");
+
 // The add-on id is permanent and the data-collection disclosure has to match
 // what is really sent to the model provider, so the build ships the version floor only.
 eq(gecko.strict_min_version, "140.0", "gecko.strict_min_version is 140.0");
 eq(Object.keys(gecko), ["strict_min_version"], "gecko key set is exactly [strict_min_version]");
 
-// ---- No stray key: the key set is base minus the two Chrome keys, plus the two Firefox keys ----
 const WANT_KEYS = ["manifest_version", "name", "short_name", "version", "description", "author", "homepage_url", "icons", "action", "background", "sidebar_action", "options_page", "content_scripts", "permissions", "host_permissions", "commands", "browser_specific_settings"];
 eq(Object.keys(out), WANT_KEYS, "output key set is base minus minimum_chrome_version/side_panel plus sidebar_action/browser_specific_settings, in order");
 
-// ---- The transform is pure: the shipped manifest is never mutated ----
 ok(JSON.stringify(base) === snapshot, "the transform does not mutate the base manifest.json");
 out.content_scripts[0].js.push("x");
 out.icons["16"] = "mutated";

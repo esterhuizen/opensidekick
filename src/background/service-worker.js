@@ -42,7 +42,7 @@ import { detachAll } from "./cdp.js";
 import { ensureContentScript } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
-import { openPanel, setPanelBehaviorOnActionClick } from "../common/browser.js";
+import { openPanel, togglePanel, setPanelBehaviorOnActionClick } from "../common/browser.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -294,13 +294,11 @@ chrome.runtime.onStartup.addListener(() => {
   withHistory(reconcileHistory).catch(() => {});
 });
 
-// Firefox has no sidePanel, so the icon click needs its own listener; the
-// Chrome-only setPanelBehavior above is a no-op there. Registered inside a
-// function, the way src/background/cdp.js binds its listeners, and guarded by
-// sidebarAction.open so Chrome never gets a second listener on the icon.
+// Firefox has no sidePanel, so the icon click needs its own listener: setPanelBehavior
+// above is Chrome-only. Guarded by sidebarAction.toggle so Chrome gets no second listener.
 function bindIconClickToPanel() {
-  if (typeof chrome.sidebarAction?.open !== "function") return;
-  chrome.action.onClicked.addListener(() => openPanel(chrome));
+  if (typeof chrome.sidebarAction?.toggle !== "function") return;
+  chrome.action.onClicked.addListener(() => togglePanel(chrome));
 }
 bindIconClickToPanel();
 
@@ -365,8 +363,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!task) return;
   pendingSeed = task;
   if (tab && tab.id != null) {
-    // The try/catch stays: openPanel resolves neutral on a gesture refusal, so
-    // this is the guard for a namespace that throws outright.
+    // The try/catch stays: openPanel resolves neutral on a refusal, so this guards a namespace that throws outright.
     try {
       await openPanel(chrome, tab.id);
     } catch {
