@@ -21,6 +21,10 @@ let listenerBound = false;
 const MAX_CONSOLE = 500;
 const MAX_NETWORK = 500;
 
+// Wrapper kept: test/cdp-scope.test.mjs pins this signature, and moving the default
+// into src/common/browser.js would put a `globalThis.chrome` read inside the module
+// AGENTS.md keeps chrome.*-free. Upgrade when the guard pins read the shipped guard as
+// data, the way browser.test.mjs reads CDP_HINT.
 export function cdpAvailable(ns = globalThis.chrome) {
   return cdpSupported(ns);
 }

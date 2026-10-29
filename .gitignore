@@ -3,7 +3,6 @@ node_modules/
 
 # Build artifacts / packaged extension
 *.zip
-*.xpi
 dist/
 web-ext-artifacts/
 

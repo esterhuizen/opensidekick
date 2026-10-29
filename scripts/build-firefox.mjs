@@ -14,10 +14,13 @@
 // Firefox has no `chrome.debugger`, so the `debugger` permission is dropped;
 // the console/network tools degrade to "not available" in the code.
 //
-// AMO rules: `name` capped at 45 chars, an add-on `id`, `strict_min_version`
-// 140.0 (first Firefox with MV3 module background scripts plus
-// `data_collection_permissions`), a data-collection disclosure, and no
+// AMO rules: `name` capped at 45 chars, `strict_min_version` 140.0 (first
+// Firefox with MV3 module background scripts), and no
 // `minimum_chrome_version`, `strict_max_version` (fails AMO schema) or gecko_android.
+//
+// The add-on `id` is permanent and the `data_collection_permissions` disclosure
+// has to match what is really sent to the model provider, so both are the
+// owner's to set at submission — this build ships neither.
 //
 // Run: node scripts/build-firefox.mjs
 
@@ -30,7 +33,6 @@ const OUT_DIR = join(ROOT, "dist", "firefox");
 
 // Verbatim AMO contract values.
 const FF_NAME = "OpenSidekick — Bring Your Own LLM Agent"; // 39 chars, base name is 47
-const GECKO_ID = "opensidekick@opensidekick.app";
 const STRICT_MIN_VERSION = "140.0";
 const SIDEBAR_PANEL = "src/sidepanel/sidepanel.html";
 const SIDEBAR_TITLE = "OpenSidekick";
@@ -38,14 +40,6 @@ const ACTION_TITLE = "Open OpenSidekick (Ctrl+Shift+E / Cmd+Shift+E)";
 const SIDEBAR_COMMAND = "_execute_sidebar_action";
 const SUGGESTED_KEY = { default: "Ctrl+Shift+E", mac: "Command+Shift+E" };
 const COMMAND_DESCRIPTION = "Open the OpenSidekick sidebar";
-
-// AMO penalises a listing that promises collection the code does not perform.
-// Prompts and page text go only to the provider the user configures, only when
-// the user asks; there is no analytics, telemetry, or phone-home.
-const DATA_COLLECTION_PERMISSIONS = {
-  required: ["none"],
-  optional: ["personalCommunications", "websiteContent", "websiteActivity"],
-};
 
 // `sidePanel` has no Firefox equivalent to grant, and `debugger` does not exist
 // in Firefox; keeping either would claim a permission the code cannot use.
@@ -98,11 +92,8 @@ export function firefoxManifest(base) {
     out[key] = structuredClone(base[key]);
   }
   out.browser_specific_settings = {
-    gecko: {
-      id: GECKO_ID,
-      strict_min_version: STRICT_MIN_VERSION,
-      data_collection_permissions: structuredClone(DATA_COLLECTION_PERMISSIONS),
-    },
+    // The version floor only; see the AMO note in the header.
+    gecko: { strict_min_version: STRICT_MIN_VERSION },
   };
   return out;
 }
