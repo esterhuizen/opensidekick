@@ -161,6 +161,23 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: "upload_file",
+    description:
+      "Attach a file you write to an <input type=file> by ref. You supply the " +
+      "file's name and text content; files on the user's disk are not accessible.",
+    parameters: {
+      type: "object",
+      properties: {
+        ref: { type: "integer", description: "The file input's ref id." },
+        name: { type: "string", description: "File name, e.g. cover-letter.txt." },
+        content: { type: "string", description: "The file's text content." },
+        mime: { type: "string", description: "MIME type (default text/plain)." },
+      },
+      required: ["ref", "name", "content"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "run_javascript",
     description:
       "Run JavaScript in the current page and get the result. Use `return` to " +
@@ -296,6 +313,15 @@ export async function executeTool(name, args, ctx) {
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "drag", ref: args.from_ref, toRef: args.to_ref });
     case "press_keys":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
+    case "upload_file":
+      return await csSend(await ctx.getTabId(), {
+        type: MSG.CS_ACT,
+        action: "upload",
+        ref: args.ref,
+        name: args.name,
+        content: args.content,
+        mime: args.mime,
+      });
     case "take_screenshot":
       return await screenshot(ctx);
     case "run_javascript":
