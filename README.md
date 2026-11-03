@@ -113,6 +113,10 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **MCP tool servers** — connect remote [Model Context Protocol](https://modelcontextprotocol.io)
   servers (GitHub, Linear, your own) so the agent can use their tools alongside
   the browser — extending it well beyond the page.
+- **Use it from your coding agent** — Claude Code, Codex, Cursor or any MCP
+  client can drive your real browser (your logins, your cookies) through a small
+  local bridge. Off by default; every action asks in the side panel. See
+  [Connect a local agent](#connect-a-local-agent-claude-code-codex-cursor).
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
 - **Local-first & private**: keys, settings and chat history live in `chrome.storage.local`;
@@ -221,6 +225,33 @@ answer. Everything is off by default; if a check is off, fails, or times out,
 the built-in checks apply unchanged. [PRIVACY.md](PRIVACY.md) lists what each
 check sends.
 
+### Connect a local agent (Claude Code, Codex, Cursor)
+
+OpenSidekick can serve its browser tools over [MCP](https://modelcontextprotocol.io)
+to agents running on your machine. Needs Node 18+ and a clone of this repo.
+
+1. Register the bridge with Chrome (the id is on `chrome://extensions`):
+   ```bash
+   node native/install.mjs <extension-id>
+   ```
+2. In OpenSidekick Settings, turn on **Let local agents use this browser**.
+3. Add the MCP server to your agent, e.g. for Claude Code:
+   ```bash
+   claude mcp add opensidekick -- node /path/to/opensidekick/native/opensidekick-bridge.mjs --mcp
+   ```
+   Other clients take the same command (`node …/opensidekick-bridge.mjs --mcp`) in their MCP config.
+4. Keep the side panel open (**Ctrl+E**): that's where you approve the agent's actions.
+
+Commands from outside are trusted less than your own chat: every action asks
+(even in Auto mode and on always-allowed sites), *Allow once* lasts only for that
+agent's session, sensitive sites ask even to be read, and blocked sites stay
+blocked. Only programs running as your OS user can reach the bridge. The agent
+works in its own tab group; close the group to end its session. With the panel
+closed, actions fail with a clear error.
+
+Chrome only for now: the installer registers Google Chrome (on macOS/Linux, not
+Chromium, Brave or Edge).
+
 ## How it works
 
 ```
@@ -305,10 +336,11 @@ Shipped since the first cut:
 - [x] Workflow recording & replay
 - [x] Connect to MCP tool servers (extend beyond the browser)
 - [x] Prompt-injection classifier on untrusted content (optional Smart check, Jev)
+- [x] Upload text files into file inputs
+- [x] Serve the browser tools to local agents over MCP (Claude Code, Codex, Cursor)
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
-- [ ] Upload files into file inputs (via the debugger)
 - [ ] CDP-based trusted input for tougher sites
 - [ ] Firefox (WebExtensions) build
 
