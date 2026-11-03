@@ -39,7 +39,7 @@ import {
 import { resolveSource, isNoteworthyChange, featureEnabled, thresholdFor } from "./decisions.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
-import { ensureContentScript } from "./tools.js";
+import { ensureContentScript, groupTab } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
 
@@ -102,7 +102,12 @@ function loadLive() {
         // A hot copy without meta (a reload mid-session) is adopted as a new chat.
         session =
           meta && typeof meta.id === "string" && meta.id
-            ? { id: meta.id, sensitive: !!meta.sensitive, ...(meta.trimmed ? { trimmed: true } : {}) }
+            ? {
+                id: meta.id,
+                sensitive: !!meta.sensitive,
+                ...(meta.trimmed ? { trimmed: true } : {}),
+                ...(Number.isInteger(meta.groupId) ? { groupId: meta.groupId } : {}),
+              }
             : { id: crypto.randomUUID(), sensitive: false };
         return;
       }
@@ -129,7 +134,12 @@ function loadLive() {
 async function writeHot() {
   // Captured now: a New chat during the first set() must not get this chat's meta.
   const convo = conversation;
-  const meta = { id: session.id, sensitive: session.sensitive, ...(session.trimmed ? { trimmed: true } : {}) };
+  const meta = {
+    id: session.id,
+    sensitive: session.sensitive,
+    ...(session.trimmed ? { trimmed: true } : {}),
+    ...(session.groupId != null ? { groupId: session.groupId } : {}),
+  };
   try {
     await chrome.storage.session.set({ [SESSION_CONVO_KEY]: stripImages(convo), [SESSION_CONVO_META_KEY]: meta });
   } catch {
@@ -271,7 +281,10 @@ async function reconcileHistory() {
 // Lifecycle
 // -------------------------------------------------------------------------
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  // Per-tab panel: it shows only on tabs it was opened on and the chat's
+  // group tabs, not on every tab in the window.
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  chrome.sidePanel.setOptions({ enabled: false }).catch(() => {});
   chrome.contextMenus.create({
     id: "ask-opensidekick",
     title: 'Ask OpenSidekick about "%s"',
@@ -344,6 +357,22 @@ async function reconcileAlarms() {
   }
 }
 
+const PANEL_PATH = "src/sidepanel/sidepanel.html";
+
+function showPanelOn(tabId) {
+  return chrome.sidePanel.setOptions({ tabId, path: PANEL_PATH, enabled: true }).catch(() => {});
+}
+
+// open() must run inside the user gesture, so setOptions isn't awaited first.
+function openPanel(tabId) {
+  showPanelOn(tabId);
+  return chrome.sidePanel.open({ tabId });
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id != null) openPanel(tab.id).catch(() => {});
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let task = null;
   if (info.menuItemId === "ask-opensidekick" && info.selectionText) {
@@ -355,7 +384,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   pendingSeed = task;
   if (tab && tab.id != null) {
     try {
-      await chrome.sidePanel.open({ tabId: tab.id });
+      await openPanel(tab.id);
     } catch {
       /* user may need to click the icon */
     }
@@ -612,6 +641,27 @@ async function handleRunTask(msg) {
     return { ok: false, error: "no-tab" };
   }
 
+  // One tab group per chat, like Claude in Chrome. A chat started on a tab
+  // that's already in a group works in that group (the user's own, kept as
+  // named); otherwise the tab joins the chat's OpenSidekick group.
+  const groupRunTab = async (tabId) => {
+    showPanelOn(tabId);
+    const id = await groupTab(tabId, runSession.groupId);
+    if (id == null || id === runSession.groupId) return;
+    runSession.groupId = id;
+    if (runSession === session) await writeHot();
+  };
+  const initialTab = await chrome.tabs.get(initialTabId).catch(() => null);
+  if (initialTab && initialTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
+    if (runSession.groupId !== initialTab.groupId) {
+      runSession.groupId = initialTab.groupId;
+      if (runSession === session) await writeHot();
+    }
+    showPanelOn(initialTabId);
+  } else if (initialTab) {
+    await groupRunTab(initialTabId);
+  }
+
   // Keep the worker alive for the whole run (incl. while awaiting prompts).
   startKeepAlive();
 
@@ -626,6 +676,8 @@ async function handleRunTask(msg) {
     requestPermission,
     requestPlanApproval,
     saveSitePermission: (origin, value) => setSitePermission(origin, value),
+    groupTab: groupRunTab,
+    getGroupId: () => runSession.groupId,
   })
     .catch((e) => emit({ kind: "error", error: String(e.message || e) }))
     .finally(async () => {

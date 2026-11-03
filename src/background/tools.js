@@ -220,7 +220,7 @@ export const TOOL_DEFS = [
   },
   {
     name: "list_tabs",
-    description: "List the open tabs in the current window (id, title, url, active).",
+    description: "List the tabs you can work with: your OpenSidekick tab group plus your current tab (id, title, url, active).",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -235,7 +235,7 @@ export const TOOL_DEFS = [
   },
   {
     name: "switch_tab",
-    description: "Switch the agent's focus to an existing tab by its id (from list_tabs).",
+    description: "Switch the agent's focus to a tab from list_tabs, by its id.",
     parameters: {
       type: "object",
       properties: { tab_id: { type: "integer", description: "The tab id." } },
@@ -316,7 +316,7 @@ export async function executeTool(name, args, ctx) {
     case "wait":
       return await waitSeconds(args.seconds);
     case "list_tabs":
-      return await listTabs();
+      return await listTabs(ctx);
     case "open_tab":
       return await openTab(ctx, args.url);
     case "switch_tab":
@@ -393,9 +393,30 @@ async function openTab(ctx, url) {
   if (!full) return { ok: false, error: "OpenSidekick opens tabs to http(s) addresses only." };
   const tab = await chrome.tabs.create({ url: full, active: true });
   ctx.setTabId(tab.id);
+  await ctx.groupTab?.(tab.id);
   await waitForLoad(tab.id);
   const updated = await chrome.tabs.get(tab.id);
   return { ok: true, tab_id: tab.id, url: updated.url, title: updated.title };
+}
+
+// Put a tab in the chat's tab group, or a new "OpenSidekick" one when the old
+// group is gone (closed or ungrouped by the user). Returns the group id, or
+// null on failure: grouping is cosmetic and must never fail a run.
+export async function groupTab(tabId, groupId) {
+  if (groupId != null) {
+    try {
+      return await chrome.tabs.group({ tabIds: [tabId], groupId });
+    } catch {
+      /* group gone — make a new one */
+    }
+  }
+  try {
+    const id = await chrome.tabs.group({ tabIds: [tabId] });
+    await chrome.tabGroups.update(id, { title: "OpenSidekick" }).catch(() => {});
+    return id;
+  } catch {
+    return null;
+  }
 }
 
 async function switchTab(ctx, tabId) {
@@ -403,6 +424,7 @@ async function switchTab(ctx, tabId) {
     const tab = await chrome.tabs.get(tabId);
     await chrome.tabs.update(tabId, { active: true });
     ctx.setTabId(tabId);
+    await ctx.groupTab?.(tabId); // already in the group; this shows the panel there
     return { ok: true, tab_id: tabId, url: tab.url, title: tab.title };
   } catch {
     return { ok: false, error: `No tab with id ${tabId}.` };
@@ -505,8 +527,16 @@ async function fetchDirectImage(url) {
   }
 }
 
-async function listTabs() {
-  const tabs = await chrome.tabs.query({ currentWindow: true });
+// The agent sees only its own tab group and the tab it's on, like Claude in
+// Chrome: the user's other tabs (mail, bank, …) stay out of reach.
+export function inReach(tab, groupId, focusedTabId) {
+  return tab.id === focusedTabId || (groupId != null && tab.groupId === groupId);
+}
+
+async function listTabs(ctx) {
+  const focused = await ctx.getTabId();
+  const groupId = ctx.getGroupId?.();
+  const tabs = (await chrome.tabs.query({})).filter((t) => inReach(t, groupId, focused));
   return {
     ok: true,
     tabs: tabs.map((t) => ({ tab_id: t.id, title: t.title, url: t.url, active: t.active })),
