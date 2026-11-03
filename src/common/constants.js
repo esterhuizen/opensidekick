@@ -212,6 +212,9 @@ export const DEFAULT_SETTINGS = {
   enableJsTool: false,
   // Expose console/network reading via Chrome's debugger (shows a banner).
   enableCdp: false,
+  // Let local agents (Claude Code, Codex, …) use the browser tools through the
+  // native bridge. Every action they take still asks in the side panel.
+  enableExternal: false,
   // Max output tokens per model call.
   maxTokens: 4096,
   // Temperature for OpenAI-style requests (ignored by Anthropic newer models).

@@ -621,6 +621,10 @@ function wireSettings() {
     config.settings.enableJsTool = e.target.checked;
     persist();
   });
+  $("#enable-external").addEventListener("change", (e) => {
+    config.settings.enableExternal = e.target.checked;
+    persist();
+  });
   $("#enable-cdp").addEventListener("change", (e) => {
     config.settings.enableCdp = e.target.checked;
     persist();
@@ -642,6 +646,7 @@ function renderSettings() {
   $("#enable-vision").checked = !!s.enableVision;
   $("#enable-js").checked = !!s.enableJsTool;
   $("#enable-cdp").checked = !!s.enableCdp;
+  $("#enable-external").checked = !!s.enableExternal;
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();
 }

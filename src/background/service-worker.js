@@ -42,6 +42,7 @@ import { detachAll } from "./cdp.js";
 import { ensureContentScript, groupTab } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
+import { connectBridge } from "./external.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -298,9 +299,11 @@ chrome.runtime.onInstalled.addListener(() => {
   runMigrations();
   reconcileAlarms();
   withHistory(reconcileHistory).catch(() => {});
+  syncBridge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  syncBridge();
   runMigrations();
   reconcileAlarms();
   withHistory(reconcileHistory).catch(() => {});
@@ -316,11 +319,35 @@ async function runMigrations() {
   if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: config });
 }
 
+// The native bridge for external agents: connected while the setting is on.
+// An open native port keeps this worker alive, so requests aren't dropped.
+let bridgePort = null;
+async function syncBridge() {
+  const on = !!(await loadConfig()).settings.enableExternal;
+  if (on && !bridgePort) {
+    try {
+      bridgePort = connectBridge({
+        loadConfig,
+        requestPermission,
+        isBusy: () => !!currentRun,
+        activeTabId: getActiveContentTabId,
+        onClose: () => (bridgePort = null),
+      });
+    } catch {
+      bridgePort = null; // bridge not installed: native/install.mjs
+    }
+  } else if (!on && bridgePort) {
+    bridgePort.disconnect();
+    bridgePort = null;
+  }
+}
+
 // Re-register scheduled-task alarms whenever the config changes.
 const SCHED_PREFIX = "osk:sched:";
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[STORAGE_KEY]) return;
   reconcileAlarms();
+  syncBridge();
   // Turning chat history off deletes it, whichever page wrote the setting. The
   // live chat carries on in the hot copy only, as before chat history existed.
   const { oldValue, newValue } = changes[STORAGE_KEY];
@@ -701,9 +728,10 @@ function requestPermission(details) {
     chrome.runtime
       .sendMessage({ type: MSG.PERMISSION_REQUEST, id, ...details })
       .catch(() => {
-        // Side panel not reachable — fail safe by declining.
+        // Side panel not reachable — fail safe by declining. A caller that
+        // wants to tell this apart from the user's "no" names its own value.
         pendingPermissions.delete(id);
-        resolve("decline");
+        resolve(details.unreachable || "decline");
       });
   });
 }

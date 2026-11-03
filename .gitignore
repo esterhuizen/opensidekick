@@ -29,5 +29,10 @@ Thumbs.db
 # Feature-video recording intermediates — only assets/feature-tour.mp4 is tracked
 assets/video-raw/
 
+# Written by native/install.mjs (machine-specific paths)
+native/*.bat
+native/*.sh
+native/com.opensidekick.bridge.json
+
 # Maintainer decision log — local only, the public repo stays end-user-facing
 .decisions/
