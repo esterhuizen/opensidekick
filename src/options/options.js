@@ -623,6 +623,10 @@ function wireSettings() {
     config.settings.enableJsTool = e.target.checked;
     persist();
   });
+  $("#enable-external").addEventListener("change", (e) => {
+    config.settings.enableExternal = e.target.checked;
+    persist();
+  });
   $("#enable-cdp").addEventListener("change", (e) => {
     config.settings.enableCdp = e.target.checked;
     persist();
@@ -648,6 +652,7 @@ function renderSettings() {
   renderToolRow("#enable-cdp", "#cdp-hint", cdpAvailable(), CDP_HINT);
   // Dead on Firefox: world: "MAIN" scripting works from 128, so this is AMO's remote-code policy, not a missing API.
   renderToolRow("#enable-js", "#js-hint", jsToolSupported(chrome), JS_HINT);
+  $("#enable-external").checked = !!s.enableExternal;
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();
 }
