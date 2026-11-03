@@ -5,7 +5,7 @@
 // doesn't extend it, or is aborted.
 
 import { callModel } from "./providers.js";
-import { TOOL_DEFS, executeTool, setOverlay } from "./tools.js";
+import { TOOL_DEFS, executeTool, setOverlay, inReach } from "./tools.js";
 import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
@@ -98,7 +98,7 @@ export function selectTools(settings, { cdpAvailable, jsAvailable }) {
 }
 
 export async function runAgent(deps) {
-  const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, requestContinue, saveSitePermission } = deps;
+  const { conversation, config, provider, initialTabId, signal, emit, requestPermission, requestPlanApproval, requestContinue, saveSitePermission, groupTab, getGroupId } = deps;
   const identity = identityNotes(config, provider);
 
   const maxSteps = Math.max(1, config.settings.maxSteps || 25);
@@ -193,6 +193,8 @@ export async function runAgent(deps) {
     setTabId: (id) => {
       focusedTabId = id;
     },
+    groupTab,
+    getGroupId,
   };
 
   // Plan-approval mode: propose a plan and wait for approval before acting.
@@ -496,8 +498,9 @@ export async function runAgent(deps) {
           } catch {
             /* refused below: no tab, no switch */
           }
+          if (tab && !inReach(tab, getGroupId?.(), focusedTabId)) tab = null; // outside the agent's group
           if (!tab) {
-            pushToolResult(conversation, call, { ok: false, error: `No tab with id ${call.args?.tab_id}.` });
+            pushToolResult(conversation, call, { ok: false, error: `No tab with id ${call.args?.tab_id} in your tab group.` });
             emit({ kind: "tool_end", name: call.name, ok: false, summary: "no such tab" });
             continue;
           }

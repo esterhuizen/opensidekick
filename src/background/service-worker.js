@@ -40,7 +40,7 @@ import {
 import { resolveSource, isNoteworthyChange, featureEnabled, thresholdFor } from "./decisions.js";
 import { runAgent } from "./agent.js";
 import { detachAll } from "./cdp.js";
-import { ensureContentScript } from "./tools.js";
+import { ensureContentScript, groupTab } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
 import { openPanel, togglePanel, setPanelBehaviorOnActionClick } from "../common/browser.js";
@@ -106,7 +106,12 @@ function loadLive() {
         // A hot copy without meta (a reload mid-session) is adopted as a new chat.
         session =
           meta && typeof meta.id === "string" && meta.id
-            ? { id: meta.id, sensitive: !!meta.sensitive, ...(meta.trimmed ? { trimmed: true } : {}) }
+            ? {
+                id: meta.id,
+                sensitive: !!meta.sensitive,
+                ...(meta.trimmed ? { trimmed: true } : {}),
+                ...(Number.isInteger(meta.groupId) ? { groupId: meta.groupId } : {}),
+              }
             : { id: crypto.randomUUID(), sensitive: false };
         return;
       }
@@ -133,7 +138,12 @@ function loadLive() {
 async function writeHot() {
   // Captured now: a New chat during the first set() must not get this chat's meta.
   const convo = conversation;
-  const meta = { id: session.id, sensitive: session.sensitive, ...(session.trimmed ? { trimmed: true } : {}) };
+  const meta = {
+    id: session.id,
+    sensitive: session.sensitive,
+    ...(session.trimmed ? { trimmed: true } : {}),
+    ...(session.groupId != null ? { groupId: session.groupId } : {}),
+  };
   try {
     await chrome.storage.session.set({ [SESSION_CONVO_KEY]: stripImages(convo), [SESSION_CONVO_META_KEY]: meta });
   } catch {
@@ -625,6 +635,25 @@ async function handleRunTask(msg) {
     return { ok: false, error: "no-tab" };
   }
 
+  // One tab group per chat, like Claude in Chrome. A chat started on a tab
+  // that's already in a group works in that group (the user's own, kept as
+  // named); otherwise the tab joins the chat's OpenSidekick group.
+  const groupRunTab = async (tabId) => {
+    const id = await groupTab(tabId, runSession.groupId);
+    if (id == null || id === runSession.groupId) return;
+    runSession.groupId = id;
+    if (runSession === session) await writeHot();
+  };
+  const initialTab = await chrome.tabs.get(initialTabId).catch(() => null);
+  if (initialTab && Number.isInteger(initialTab.groupId) && initialTab.groupId !== -1) {
+    if (runSession.groupId !== initialTab.groupId) {
+      runSession.groupId = initialTab.groupId;
+      if (runSession === session) await writeHot();
+    }
+  } else if (initialTab) {
+    await groupRunTab(initialTabId);
+  }
+
   // Keep the worker alive for the whole run (incl. while awaiting prompts).
   startKeepAlive();
 
@@ -640,6 +669,8 @@ async function handleRunTask(msg) {
     requestPlanApproval,
     requestContinue,
     saveSitePermission: (origin, value) => setSitePermission(origin, value),
+    groupTab: groupRunTab,
+    getGroupId: () => runSession.groupId,
   })
     .catch((e) => emit({ kind: "error", error: String(e.message || e) }))
     .finally(async () => {
