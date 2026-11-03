@@ -19,8 +19,13 @@ export const TOOL_DEFS = [
       "Read the current page. Returns the page title, URL, a text summary, and a " +
       "list of interactive elements each with a numeric 'ref' id you can use with " +
       "click_element, type_text, and select_option. Call this before acting so you " +
-      "know what is on the page.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
+      "know what is on the page. On big pages pass query (e.g. 'search box', " +
+      "'checkout button') to get only the matching elements.",
+    parameters: {
+      type: "object",
+      properties: { query: { type: "string", description: "Optional: words describing the element(s) you want." } },
+      additionalProperties: false,
+    },
   },
   {
     name: "get_page_text",
@@ -304,7 +309,7 @@ export const TOOL_DEFS = [
 export async function executeTool(name, args, ctx) {
   switch (name) {
     case "read_page":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_READ_PAGE });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_READ_PAGE, query: args.query || undefined });
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
