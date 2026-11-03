@@ -236,6 +236,8 @@
         return drag(el, refMap.get(msg.toRef));
       case "keys":
         return pressKeys(el, msg.keys);
+      case "upload":
+        return upload(el, msg.name, msg.content, msg.mime);
       default:
         return { ok: false, error: `Unknown action ${msg.action}` };
     }
@@ -293,6 +295,20 @@
       /* DataTransfer/DragEvent may be unavailable; pointer path already fired */
     }
     return { ok: true, dragged: true };
+  }
+
+  // Content comes from the model, never from the user's disk, so a page that
+  // talks the agent into "uploading" can't reach local files this way.
+  function upload(el, name, content, mime) {
+    if (!(el instanceof HTMLInputElement) || el.type !== "file") {
+      return { ok: false, error: "That element is not a file input." };
+    }
+    const dt = new DataTransfer();
+    dt.items.add(new File([content || ""], name || "file.txt", { type: mime || "text/plain" }));
+    el.files = dt.files;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return { ok: true, uploaded: el.files[0].name };
   }
 
   function pressKeys(el, keys) {

@@ -27,6 +27,7 @@ export const MUTATING_TOOLS = new Set([
   "right_click",
   "drag_element",
   "press_keys",
+  "upload_file",
   "run_javascript",
 ]);
 

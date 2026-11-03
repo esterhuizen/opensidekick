@@ -76,7 +76,7 @@ const ACT_TOOLS = new Set([
 ]);
 
 // Tools that can send text out of the page (form fields, scripts).
-const SEND_TOOLS = new Set(["type_text", "press_keys", "run_javascript"]);
+const SEND_TOOLS = new Set(["type_text", "press_keys", "upload_file", "run_javascript"]);
 
 // The URL a tab shows or is loading ("" when the tab is gone).
 async function tabUrl(tabId) {
