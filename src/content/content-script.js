@@ -24,7 +24,7 @@
           sendResponse({ ok: true });
           return true;
         case "cs_read_page":
-          sendResponse(readPage());
+          sendResponse(readPage(msg.query));
           return true;
         case "cs_get_text":
           sendResponse({ ok: true, url: location.href, title: document.title, text: pageText() });
@@ -53,7 +53,10 @@
   // Reading
   // -------------------------------------------------------------------------
 
-  function readPage() {
+  // With a query, only the best-matching elements come back (word overlap on
+  // name/placeholder/href), so big pages don't flood a small model's context.
+  // ponytail: plain keyword match, no synonyms; add a model rerank if it misses.
+  function readPage(query) {
     refMap = new Map();
     refCounter = 0;
 
@@ -81,7 +84,7 @@
 
     const nodes = document.querySelectorAll(selector);
     for (const el of nodes) {
-      if (elements.length >= MAX_ELEMENTS) break;
+      if (!query && elements.length >= MAX_ELEMENTS) break;
       // Never expose OpenSidekick's own on-page overlay to the model.
       if (el.closest("#opensidekick-overlay")) continue;
       if (!isVisible(el)) continue;
@@ -89,6 +92,7 @@
       refMap.set(ref, el);
       elements.push(describe(ref, el));
     }
+    if (query) return findResult(query, elements);
 
     return {
       ok: true,
@@ -100,6 +104,25 @@
         elements.length >= MAX_ELEMENTS
           ? `Showing first ${MAX_ELEMENTS} interactive elements; scroll for more.`
           : undefined,
+    };
+  }
+
+  function findResult(query, all) {
+    const words = String(query).toLowerCase().split(/W+/).filter((w) => w.length > 1);
+    const scored = all
+      .map((e) => {
+        const hay = [e.name, e.placeholder, e.href, e.role, e.tag, e.type].join(" ").toLowerCase();
+        return { e, score: words.filter((w) => hay.includes(w)).length };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20);
+    return {
+      ok: true,
+      url: location.href,
+      title: document.title,
+      elements: scored.map((x) => x.e),
+      note: scored.length ? undefined : "No element matched; call read_page without a query.",
     };
   }
 
