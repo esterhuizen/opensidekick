@@ -24,11 +24,11 @@ export function applyMigrations(stored) {
   }
 
   // The step limit became a checkpoint (the panel asks to keep going) and its
-  // default went from 25 to 100. Lift configs still on the old default, once.
-  if (!migrations.maxSteps100) {
+  // default went from 25 to 250. Lift configs still on the old default, once.
+  if (!migrations.maxSteps250) {
     config.settings = config.settings || {};
-    if (config.settings.maxSteps === 25) config.settings.maxSteps = 100;
-    migrations.maxSteps100 = true;
+    if (config.settings.maxSteps === 25) config.settings.maxSteps = 250;
+    migrations.maxSteps250 = true;
     changed = true;
   }
 
