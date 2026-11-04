@@ -24,13 +24,30 @@ export function parsePlan(text) {
 }
 
 /** Normalize a plan-listed domain (or a full URL) to a bare hostname. */
+// Registry suffixes a plan must not name on their own: approving "com" or
+// "co.uk" would pre-approve every site under it. Not the full public suffix
+// list — the common ones, plus a rule that a name needs two labels.
+const PUBLIC_SUFFIXES = new Set([
+  "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au", "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+  "co.za", "org.za", "gov.za", "co.jp", "ne.jp", "or.jp", "co.kr", "co.in", "com.br", "com.mx",
+  "com.cn", "com.hk", "com.sg", "com.tr", "com.ar", "co.il", "com.tw", "github.io", "pages.dev",
+  "vercel.app", "netlify.app", "herokuapp.com", "appspot.com", "blogspot.com", "web.app", "firebaseapp.com",
+]);
+
 export function hostFromDomain(d) {
-  return String(d || "")
+  const h = String(d || "")
     .trim()
     .replace(/^https?:\/\//i, "")
     .replace(/\/.*$/, "")
     .replace(/:\d+$/, "")
+    .replace(/^\*\./, "")
+    .replace(/\.+$/, "")
     .toLowerCase();
+  if (!h || !/^[a-z0-9.\-]+$/.test(h)) return "";
+  if (h === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
+  if (!h.includes(".") || h.startsWith(".") || PUBLIC_SUFFIXES.has(h)) return "";
+  return h;
 }
 
 /** A plain-text rendering of a plan, for the model's own context. */

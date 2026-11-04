@@ -30,6 +30,11 @@ const p4 = parsePlan("not json at all");
 ok(p4.summary === "not json at all" && p4.needsActions === true, "parsePlan: falls back gracefully");
 
 // --- hostFromDomain ---
+ok(hostFromDomain("com") === "" && hostFromDomain(".com") === "" && hostFromDomain("*.com") === "", "host: a bare TLD is refused (it would approve every .com)");
+ok(hostFromDomain("co.uk") === "" && hostFromDomain("github.io") === "", "host: a public suffix is refused");
+ok(hostFromDomain("bbc.co.uk") === "bbc.co.uk" && hostFromDomain("*.example.com") === "example.com", "host: a real site under a suffix is kept");
+ok(hostFromDomain("localhost") === "localhost" && hostFromDomain("127.0.0.1") === "127.0.0.1", "host: localhost and IPs are kept");
+ok(hostFromDomain("evil.com.") === "evil.com" && hostFromDomain("a b.com") === "", "host: trailing dot trimmed, junk refused");
 ok(hostFromDomain("github.com") === "github.com", "host: bare domain");
 ok(hostFromDomain("https://github.com/some/path") === "github.com", "host: strips scheme + path");
 ok(hostFromDomain("http://127.0.0.1:8080/page") === "127.0.0.1", "host: strips port");

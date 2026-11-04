@@ -13,6 +13,12 @@ backend server operated by the project and collects no analytics or telemetry.
 - **Page content** (text and a map of interactive elements) from the tab you ask
   the assistant to work on is read on demand and sent **to the LLM provider you
   configured** so the model can understand and act on the page.
+- **Where you are:** each request also tells the provider the site the task
+  started on (the hostname only, such as `example.com`, never the full address
+  or page title) and today's date. If you had text selected on the page when you
+  asked, that text is sent with the first page read, where page content would
+  be sent anyway, and never on banking, payment or crypto sites or on sites your
+  rules keep the agent off.
 - **Your messages** to the assistant are sent to that same provider.
 - **Chat history** (on by default; Settings → Chat history) is stored in
   `chrome.storage.local`: your 20 most recent chats, each with a title, when it

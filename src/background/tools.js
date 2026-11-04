@@ -260,7 +260,9 @@ export const TOOL_DEFS = [
     description:
       "Ask the user a question and end this turn; their reply arrives as the next message. " +
       "Use it only when you need something only the user can give: a choice between options, " +
-      "missing details, or a login or CAPTCHA they must handle. Never use it to ask whether to continue.",
+      "missing details, or a login or CAPTCHA they must handle — and before sending, posting, publishing, " +
+      "submitting, deleting or paying for anything the user didn't explicitly ask for. " +
+      "Don't use it just to ask whether to keep working.",
     parameters: {
       type: "object",
       properties: { question: { type: "string", description: "The question, short and specific." } },

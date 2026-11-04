@@ -318,19 +318,37 @@ function decide(messages) {
   // Checkbox: one click_element on a checkbox must leave it checked.
   // Long task (0.5.0): act, then pause with a progress report; the agent's
   // keep-going reminder (handled at the top) gets it to carry on and finish.
-  if (/long job with check-ins/.test(firstUser)) {
-    const agree = elements.find((e) => /agree/i.test(e.name || ""));
+  if (/long job with check-ins|draft and check/.test(firstUser)) {
+    const box = elements.find((e) => e.tag === "input");
     if (n === 0) return { kind: "tool", name: "read_page", args: {} };
-    if (n === 1) return { kind: "tool", name: "hover_element", args: { ref: agree?.ref } };
-    if (n === 2) return { kind: "text", text: "Screen 1 done. Shall I continue?" };
+    if (n === 1) return { kind: "tool", name: "type_text", args: { ref: box?.ref, text: "draft" } };
+    // Asking before a send: the reminder must not answer for the user.
+    if (/draft and check/.test(firstUser)) return { kind: "text", text: "Draft ready, addressed to everyone. Should I send it?" };
+    if (n === 2) return { kind: "text", text: "Screen 1 done. Moving on." };
     return { kind: "text", text: "Screen 2 done." };
+  }
+  // Two calls in one turn, the first ends it: the second must still get a result.
+  if (/ask then read/.test(firstUser)) {
+    if (lastUser.includes("blue please")) {
+      const orphan = messages.some((m) => m.role === "assistant" && (m.tool_calls || []).some((tc) => !messages.some((t) => t.role === "tool" && t.tool_call_id === tc.id)));
+      return { kind: "text", text: orphan ? "orphaned_call" : "pairs_ok" };
+    }
+    return { kind: "tools", calls: [{ name: "ask_user", args: { question: "Red or blue?" } }, { name: "read_page", args: {} }] };
   }
   // A plain answer after reading only: no reminder, the run ends on the text.
   if (/summarise this/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "get_page_text", args: {} };
-    return { kind: "text", text: "summary_done" };
+    const sel = parsed.find((p) => p.user_selection)?.user_selection;
+    return { kind: "text", text: sel ? "summary_done sel=" + sel : "summary_done" };
   }
   if (/which colour should/.test(firstUser)) return { kind: "tool", name: "ask_user", args: { question: "Which colour do you want: red or blue?" } };
+  // Stuck: click Search, read, click, read… and nothing changes.
+  if (/go round in circles/.test(firstUser)) {
+    const btn = elements.find((e) => e.tag === "button" && /search/i.test(e.name || ""));
+    if (n > 12) return { kind: "tool", name: "finish", args: { summary: "gave up" } };
+    if (n % 2 === 0) return { kind: "tool", name: "read_page", args: {} };
+    return { kind: "tool", name: "click_element", args: { ref: btn?.ref } };
+  }
   if (/keep scrolling forever/.test(firstUser)) return { kind: "tool", name: "scroll", args: { direction: n % 2 ? "up" : "down" } };
 
   if (/tick the agree box/.test(firstUser)) {
@@ -401,6 +419,19 @@ function sseToolCall(res, id, name, argsObj) {
   const mid = Math.ceil(args.length / 2); // split args across chunks on purpose
   send({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(0, mid) } }] } }] });
   send({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(mid) } }] } }] });
+  send({ choices: [{ finish_reason: "tool_calls" }] });
+  res.write("data: [DONE]\n\n");
+  res.end();
+}
+
+// Several tool calls in one assistant turn.
+function sseToolCalls(res, calls) {
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "access-control-allow-origin": "*" });
+  const send = (o) => res.write("data: " + JSON.stringify(o) + "\n\n");
+  send({ choices: [{ delta: { role: "assistant" } }] });
+  calls.forEach((c, i) => {
+    send({ choices: [{ delta: { tool_calls: [{ index: i, id: `multi_${Date.now()}_${i}`, function: { name: c.name, arguments: JSON.stringify(c.args || {}) } }] } }] });
+  });
   send({ choices: [{ finish_reason: "tool_calls" }] });
   res.write("data: [DONE]\n\n");
   res.end();
@@ -519,6 +550,7 @@ function startServer() {
         const d = decide(messages);
         if (d.kind === "text" && d.stallMs) sseTextStalled(res, d.text, d.stallMs);
         else if (d.kind === "text") sseText(res, d.text);
+        else if (d.kind === "tools") sseToolCalls(res, d.calls);
         else sseToolCall(res, "call_" + Date.now(), d.name, d.args);
       });
       return;
@@ -1191,8 +1223,11 @@ async function main() {
     // --- 0.5.0 long tasks: a progress report mid-task doesn't end the run ---
     nudgeCount = 0;
     const lj = await drive("Do this long job with check-ins.");
-    check(toolsOf(lj.events).includes("hover_element") && toolsOf(lj.events).includes("scroll"), `long task: kept working after "Shall I continue?" (tools ${toolsOf(lj.events).join(",")})`);
+    check(toolsOf(lj.events).includes("type_text") && toolsOf(lj.events).includes("scroll"), `long task: kept working after a progress report (tools ${toolsOf(lj.events).join(",")})`);
     check(nudgeCount === 2, `long task: two keep-going reminders, then it finished (saw ${nudgeCount})`);
+    nudgeCount = 0;
+    const dc = await drive("Draft and check with me before sending.");
+    check(nudgeCount === 0 && /Should I send it\?/.test(answerOf(dc.events)), `long task: a "should I send it?" is left for the user, not answered by a reminder (nudges ${nudgeCount})`);
     check(lj.events.filter((e) => e.kind === "error").length === 0, "long task: no error events");
     check(!lj.events.some((e) => e.kind === "finish" && e.summary), "long task: the empty finish adds no extra bubble");
     check(/Screen 2 done/.test(answerOf(lj.events)), `long task: the last answer is the model's own text (got "${answerOf(lj.events)}")`);
@@ -1200,8 +1235,8 @@ async function main() {
     nudgeCount = 0;
     const sm = await drive("Summarise this for me.");
     check(nudgeCount === 0 && answerOf(sm.events) === "summary_done", `context: a read-only answer ends the run without a reminder (nudges ${nudgeCount})`);
-    check(lastSystem.includes(`Current tab: ${base}/page`), "context: the system prompt names the current tab");
-    check(lastSystem.includes('Tab title (written by the website') && lastSystem.includes('"Test Search"'), "context: the tab title is given, marked as website data");
+    check(lastSystem.includes("When the task started the tab was on 127.0.0.1."), "context: the system prompt names the starting site (host only)");
+    check(!lastSystem.includes("/page") && !lastSystem.includes("Test Search"), "context: no path or page title in the system prompt");
     check(/"this", "here", "this page"/.test(lastSystem) && /Never answer that you can't see the page/.test(lastSystem), "context: the prompt says 'this' means the current tab");
 
     // Selected text on the page reaches the model as marked page data.
@@ -1212,14 +1247,25 @@ async function main() {
       sel.removeAllRanges();
       sel.addRange(r);
     });
-    await drive("Summarise this selection.");
-    check(lastSystem.includes("<<<SELECTION") && /Test Search Page/.test(lastSystem.split("<<<SELECTION")[1] || ""), "context: the user's selection is passed, fenced as page data");
+    const ss = await drive("Summarise this selection.");
+    check(/sel=Test Search Page/.test(answerOf(ss.events)), `context: the user's selection arrives with the first page read (got "${answerOf(ss.events)}")`);
+    check(/user_selection/.test(lastSystem) && !lastSystem.includes("Test Search Page"), "context: the prompt says a selection is waiting, without its text");
+    check(ss.events.some((e) => e.kind === "note" && /selected on the page/.test(e.text || "")), "context: the panel says the selection is being used");
     await testPage.evaluate(() => window.getSelection().removeAllRanges());
 
     const ask = await drive("Paint it — which colour should I use?");
     const askFin = ask.events.find((e) => e.kind === "finish");
     check(askFin && askFin.question === true && /red or blue/.test(askFin.summary), `ask_user: the question is shown and the turn ends (got "${askFin && askFin.summary}")`);
     check(!toolsOf(ask.events).length || toolsOf(ask.events).every((t) => t !== "ask_user"), "ask_user: not shown as a page action");
+
+    const ar = await drive("Ask then read.");
+    check(ar.events.some((e) => e.kind === "finish" && e.question), "ask_user mid-turn: the question ends the turn");
+    const ar2 = await drive("blue please", { newChat: false });
+    check(answerOf(ar2.events) === "pairs_ok", `ask_user mid-turn: the call after it still got a result, so the chat goes on (got "${answerOf(ar2.events)}")`);
+
+    const rc = await drive("Go round in circles.");
+    const rcSkip = rc.events.find((e) => e.kind === "tool_end" && e.summary === "skipped: repeated steps");
+    check(!!rcSkip && rc.events.some((e) => e.kind === "warning" && /round in circles/.test(e.text || "")), "loop: a click-read cycle where nothing changes is stopped");
 
     // Step limit: a checkpoint asks to keep going; yes extends, no stops.
     await optPage.evaluate(() => { window.__cont = []; window.__contChoices = [true, false]; });
@@ -2273,9 +2319,7 @@ async function main() {
           "identity: the system prompt names the model and the provider",
         );
         check(
-          // The tab under test is served from the mock's host too, so the host
-          // may appear in the "where you are" note; it must not in the rest.
-          !lastSystem.includes(MOCK_KEY) && !lastSystem.includes(`${base}/v1`) && !lastSystem.split("Where you are:")[0].includes(new URL(base).host),
+          !lastSystem.includes(MOCK_KEY) && !lastSystem.includes(`${base}/v1`) && !lastSystem.includes(new URL(base).host),
           "identity: the system prompt carries neither the API key nor the base URL",
         );
       } finally {

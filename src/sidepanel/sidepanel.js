@@ -620,6 +620,10 @@ function handleEvent(ev) {
       break;
     case "idle":
       setRunning(false);
+      // The run is over: a card still waiting for an answer can't be answered.
+      els.messages.querySelectorAll(".perm-card[data-run] .perm-buttons").forEach((b) => {
+        b.outerHTML = `<p class="muted-note">No longer needed — the task ended.</p>`;
+      });
       break;
   }
 }
@@ -876,9 +880,10 @@ function showContinue(req) {
   sealLog();
   const el = document.createElement("div");
   el.className = "perm-card plan-card";
+  el.dataset.run = "1";
   el.innerHTML = `
     <h3>Step limit reached — keep going?</h3>
-    <p>The agent has taken ${escapeHtml(String(req.steps || ""))} steps on this task and paused at your step limit. It can keep going, or stop here.</p>
+    <p>The agent has taken ${escapeHtml(String(req.steps || ""))} steps on this task and paused at your step limit. It can keep going, or stop here. If it keeps going, the sites you approved for this task stay approved.</p>
     <p class="muted-note">You can change the limit in Settings → “Steps before asking to keep going”. <button type="button" class="note-action" data-settings="1">Open Settings</button></p>
     <div class="perm-buttons">
       <button class="primary" data-approved="1">Keep going</button>
@@ -902,6 +907,7 @@ function showPlan(req) {
   const plan = req.plan || {};
   const el = document.createElement("div");
   el.className = "perm-card plan-card";
+  el.dataset.run = "1";
   const steps = (plan.steps || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
   const domains = (plan.domains || []).map((d) => `<span class="domain-chip">${escapeHtml(d)}</span>`).join("");
   el.innerHTML = `
@@ -929,6 +935,7 @@ function showPermission(req) {
   sealLog();
   const el = document.createElement("div");
   el.className = "perm-card" + (req.sensitive ? " sensitive" : "");
+  el.dataset.run = "1";
   const action = describeAction(req.toolName, req.args);
   // An MCP tool runs on a server, not on a page: no origin, and nothing here may
   // read as "trust this site" (a session grant for the server is all it gets).

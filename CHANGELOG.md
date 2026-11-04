@@ -15,22 +15,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   say it was your step limit and where to change it (Settings → “Steps before
   asking to keep going”, now up to 1000). Settings still at the old 25
   move to 250 once.
-- **The agent knows where it is.** Every model call is told that it runs in a
-  side panel, that "this" means the current tab, the tab's address (without
-  its query string) and title, and today's date and time zone. On banking,
-  payment and crypto sites, and on sites your rules keep it off, it gets the
-  site name only.
-- **Selected text is used.** Text you select on the page before asking is
-  passed along, marked as page content. Not on sensitive sites, and not where
-  your rules stop the agent reading.
+- **The agent knows where it is.** It is told that it runs in a side panel,
+  that "this" means the current tab, the site the task started on (hostname
+  only) and today's date. Page titles, addresses and other page-written text
+  never go into its instructions.
+- **Selected text is used.** Text you select on the page before asking comes
+  with the agent's first read of that page, marked as page content and checked
+  for injected instructions like the rest of the page. Not on sensitive sites,
+  and not where your rules stop the agent reading.
 - **Long tasks stay fast.** Older page reads and screenshots are shortened
-  before each model call (the newest read of each kind stays whole), so an
-  11-screen task doesn't send every old page again on every step.
+  before each model call (the newest read of each kind stays whole, and an
+  injection warning stays on the shortened copy).
+- **Confirm before sending.** The agent is told to ask before it sends, posts,
+  publishes, submits, deletes or pays for anything you didn't explicitly ask
+  for, and the keep-going reminder never answers a question it asked you.
+- **Scheduled tasks stop at 25 steps**, whatever the chat limit is: no one is
+  there to answer "keep going?".
 
 ### Added
 
 - **`ask_user` tool.** When the agent needs something only you can give, it
   asks, and the run ends on the question; your reply continues the task.
+
+### Fixed
+
+- A turn that ended early (a question, a finish, a declined action, Stop) with
+  more tool calls pending could leave the chat unusable on some providers until
+  New chat. Every pending call now gets a "not run" result.
+- The agent is stopped when it goes round in circles (the same two steps with
+  the same results, three times).
+- A plan can no longer pre-approve a whole domain ending such as `com` or
+  `co.uk`.
+- Permission cards left open when a task ends are closed, and a card from
+  before a background restart can't answer a new prompt.
 
 ## [0.4.2] — 2026-10-27
 

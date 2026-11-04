@@ -194,6 +194,10 @@ export const PROVIDER_PRESETS = [
   },
 ];
 
+// Step cap for scheduled (unattended) runs: no one is there to answer the
+// "keep going?" checkpoint, so a stuck run must end cheaply.
+export const SCHEDULED_MAX_STEPS = 25;
+
 export const DEFAULT_SETTINGS = {
   // "ask"  -> confirm before the agent takes its first action on each new site.
   // "auto" -> act without asking on already-allowed sites (still confirms new

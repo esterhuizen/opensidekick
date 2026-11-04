@@ -10,7 +10,7 @@ import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, origi
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { touchesSensitiveSite } from "./sessions.js";
-import { pageContextNote, compactForModel, CONTINUE_NUDGE, MAX_NUDGES } from "./context.js";
+import { pageContextNote, compactForModel, asksUser, CONTINUE_NUDGE, MAX_NUDGES } from "./context.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
 import { resolveSource, classifyInjection, classifyAction, createBreaker, thresholdFor, featureEnabled } from "./decisions.js";
 
@@ -65,6 +65,13 @@ function identityNotes(config, provider) {
     plan: `You are the model "${model}" via the provider "${provider.name}".\n\n`,
   };
 }
+
+// Tools that change something on the page: one of these running makes a
+// text-only reply "mid-task" (navigation, hovering and reads don't).
+const ACT_TOOLS = new Set([
+  "click_element", "type_text", "select_option", "double_click", "right_click",
+  "drag_element", "press_keys", "run_javascript",
+]);
 
 // Tools that can send text out of the page (form fields, scripts).
 const SEND_TOOLS = new Set(["type_text", "press_keys", "run_javascript"]);
@@ -136,31 +143,21 @@ export async function runAgent(deps) {
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
   let nudges = 0; // CONTINUE_NUDGE reminders sent this run
-  let acted = false; // a tool other than a read/wait ran this run
+  let acted = false; // a page-changing tool ran this run
+  let injectionSeen = false; // a page read this run was flagged as an injection
   let stepLimit = maxSteps;
   // Text the user had selected when they sent the task, read once (only where
-  // the agent may read the page anyway, and never on a sensitive site).
+  // the agent may read the page anyway, and never on a sensitive site). It is
+  // handed over inside the first gated read of that page, never in a prompt.
   const selection = await readSelection(initialTabId, config);
-  // The "where you are" note for the system prompt: the tab the agent is on
-  // now. Title and selection only where a page read would be allowed.
-  const contextNote = async () => {
-    let tab = null;
-    try {
-      tab = await chrome.tabs.get(focusedTabId);
-    } catch {
-      /* gone: described as unreadable */
-    }
-    const url = tab ? tab.url || tab.pendingUrl || "" : "";
-    const sensitive = isSensitive(url);
-    const readable = !!url && evaluate("get_page_text", url, config, sessionGrants).decision === "allow";
-    return pageContextNote({
-      url,
-      title: tab?.title || "",
-      readable,
-      sensitive,
-      selection: focusedTabId === initialTabId && readable && !sensitive && selection.url === url ? selection.text : "",
-    });
-  };
+  let selectionPending = !!selection.text;
+  // The "where you are" note: built once, fixed for the run, no page text.
+  const startUrl = await tabUrl(initialTabId);
+  const where = pageContextNote({
+    url: startUrl,
+    readable: !!startUrl && evaluate("get_page_text", startUrl, config, sessionGrants).decision === "allow",
+    hasSelection: selectionPending,
+  });
 
   // Optional smart checks (Jev). `dsrc` is null unless the user switched them on
   // AND a key source resolves, so every hook below is a no-op by default. Each
@@ -184,6 +181,8 @@ export async function runAgent(deps) {
 
   // Loop detector (pure JS, no model): signatures of calls that actually ran.
   const executed = [];
+  const outcomes = []; // [signature, result] of the last calls that ran, for (F2)
+  const stuckPair = new Set(); // the two signatures of a detected two-step cycle
   let loopWarned = false;
   const declinedServers = new Set(); // MCP servers the user refused, for this run
   const ctx = {
@@ -198,7 +197,7 @@ export async function runAgent(deps) {
     emit({ kind: "planning" });
     let plan = null;
     try {
-      plan = await makePlan(provider, config, conversation, signal, identity.plan, await contextNote());
+      plan = await makePlan(provider, config, conversation, signal, identity.plan, where);
     } catch {
       plan = null; // if planning fails, fall through and run normally
     }
@@ -251,7 +250,7 @@ export async function runAgent(deps) {
     try {
       result = await callModel(provider, {
         model: config.activeModel,
-        system: SYSTEM_PROMPT + identity.main + (await contextNote()),
+        system: SYSTEM_PROMPT + identity.main + where,
         messages: compactForModel(conversation),
         tools,
         maxTokens: config.settings.maxTokens,
@@ -296,7 +295,9 @@ export async function runAgent(deps) {
       // A text-only reply in the middle of an action task is usually a progress
       // report or "shall I go on?". Once the agent has acted, remind it to keep
       // going (bounded) instead of ending the run on the user.
-      if (acted && nudges < MAX_NUDGES) {
+      // Never when the reply asks the user something (a reminder would answer
+      // "should I send it?" for them), or after a page tried to give orders.
+      if (acted && nudges < MAX_NUDGES && !injectionSeen && !asksUser(result.content)) {
         nudges++;
         conversation.push({ role: "user", internal: true, content: CONTINUE_NUDGE });
         continue;
@@ -307,8 +308,16 @@ export async function runAgent(deps) {
 
     // Execute each requested tool, appending a tool result for every call.
     const pendingImages = [];
-    for (const call of result.toolCalls) {
+    // Every call in a turn needs a result, or providers reject the chat from
+    // then on; when the turn ends early, the rest are recorded as not run.
+    const endTurn = (from) => {
+      for (const c of result.toolCalls.slice(from)) {
+        pushToolResult(conversation, c, { ok: false, error: "Not run: the turn ended before this call." });
+      }
+    };
+    for (const [ci, call] of result.toolCalls.entries()) {
       if (signal.aborted) {
+        endTurn(ci);
         emit({ kind: "aborted" });
         return;
       }
@@ -323,6 +332,7 @@ export async function runAgent(deps) {
           name: call.name,
           content: JSON.stringify({ ok: true }),
         });
+        endTurn(ci + 1);
         emit({ kind: "finish", summary });
         emit({ kind: "done" });
         return;
@@ -338,6 +348,7 @@ export async function runAgent(deps) {
           name: call.name,
           content: JSON.stringify({ ok: true, note: "Question shown to the user. Their reply will be the next message." }),
         });
+        endTurn(ci + 1);
         emit({ kind: "finish", summary: question, question: true });
         emit({ kind: "done" });
         return;
@@ -372,6 +383,23 @@ export async function runAgent(deps) {
           loopWarned = true;
           emit({ kind: "warning", text: "The agent started repeating itself; nudged it to try something else." });
         }
+        continue;
+      }
+
+      // (F2) Two-step cycle: click, read, click, read… with the same results
+      // each time means the page isn't changing. The check above never sees it
+      // (reads are exempt and the calls alternate), and with a high step limit
+      // it would run until the checkpoint.
+      if (stuckPair.has(signature) && !LOOP_EXEMPT.has(call.name)) {
+        stuckPair.clear();
+        outcomes.length = 0;
+        pushToolResult(conversation, call, {
+          ok: false,
+          error:
+            "You've repeated the same two steps 3 times and nothing changed. Don't repeat them — try a different element, a different approach, or call finish with what you have.",
+        });
+        emit({ kind: "tool_end", name: call.name, ok: false, summary: "skipped: repeated steps" });
+        emit({ kind: "warning", text: "The agent was going round in circles; nudged it to try something else." });
         continue;
       }
 
@@ -416,7 +444,6 @@ export async function runAgent(deps) {
         }
 
         executed.push(signature);
-        acted = true;
         let toolResult;
         try {
           const r = await callTool(d.server, d.session, d.remoteName, call.args || {});
@@ -609,6 +636,7 @@ export async function runAgent(deps) {
               error: "The user declined this action.",
             });
             emit({ kind: "tool_end", name: call.name, ok: false, summary: "Declined by user." });
+            endTurn(ci + 1);
             emit({ kind: "done" });
             return;
           }
@@ -643,7 +671,7 @@ export async function runAgent(deps) {
       await setOverlay(focusedTabId, hideForShot ? "hide" : "show", overlayLabel);
 
       executed.push(signature);
-      if (!LOOP_EXEMPT.has(call.name)) acted = true;
+      if (ACT_TOOLS.has(call.name)) acted = true;
       let toolResult;
       try {
         toolResult = await executeTool(call.name, runArgs, ctx);
@@ -680,10 +708,20 @@ export async function runAgent(deps) {
           lastElements.clear();
           for (const el of toolResult.elements || []) lastElements.set(el.ref, el.name || "");
         }
-        const scanText = call.name === "read_page" ? readableText(toolResult) : toolResult.text || "";
+        // The user's selection rides on the first read of the page it came
+        // from, so it is gated, scanned and compacted like any page content.
+        if (selectionPending && focusedTabId === initialTabId && originOf(toolResult.url || "") === originOf(selection.url)) {
+          toolResult.user_selection = selection.text;
+          selectionPending = false;
+          emit({ kind: "note", text: "Using the text you selected on the page.", icon: "dot" });
+        }
+        const scanText =
+          (call.name === "read_page" ? readableText(toolResult) : toolResult.text || "") +
+          (toolResult.user_selection ? " " + toolResult.user_selection : "");
         if (detectInjection(scanText).suspected) {
           toolResult.suspected_injection = true;
           toolResult.injection_note = INJECTION_NOTE;
+          injectionSeen = true;
           emit({ kind: "warning", text: "Possible prompt injection in page content — instructions found in the page will be ignored." });
         } else if (dsrc && featureEnabled(config, "injection") && !isSensitive(toolResult.url || observedOrigin || "")) {
           // The regex is an unconditional floor; this only ever adds a flag it
@@ -694,6 +732,7 @@ export async function runAgent(deps) {
           // the rest of the extension already treats them as a category apart.
           const jev = await classifyInjection(dsrc, scanText, { breaker, emit, signal });
           if (jev && jev.probability >= dthreshold) {
+            injectionSeen = true;
             toolResult.suspected_injection = true;
             toolResult.injection_note = INJECTION_NOTE;
             emit({
@@ -709,6 +748,7 @@ export async function runAgent(deps) {
       }
 
       pushToolResult(conversation, call, toolResult);
+      noteOutcome(outcomes, stuckPair, signature, toolResult);
       emit({
         kind: "tool_end",
         name: call.name,
@@ -799,7 +839,7 @@ async function readSelection(tabId, config) {
     if (evaluate("get_page_text", url, config, new Set()).decision !== "allow") return none;
     const [r] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => ({ href: location.href, text: String(window.getSelection() || "").slice(0, 4000) }),
+      func: () => ({ href: location.href, text: String(window.getSelection() || "").slice(0, 4000).toWellFormed() }),
     });
     const res = r && r.result;
     if (!res || originOf(res.href) !== originOf(url)) return none;
@@ -807,6 +847,35 @@ async function readSelection(tabId, config) {
   } catch {
     return none;
   }
+}
+
+// (F2) Record what a call returned; six in a row shaped a,b,a,b,a,b (same
+// calls, same results, one of them an action) mark the pair as stuck.
+function noteOutcome(outcomes, stuckPair, signature, result) {
+  let r = "";
+  try {
+    r = JSON.stringify(result).slice(0, 4000);
+  } catch {
+    /* unserialisable: never equal */
+    r = String(Math.random());
+  }
+  outcomes.push(signature + "\u0000" + r);
+  if (outcomes.length > 6) outcomes.shift();
+  if (outcomes.length < 6) return;
+  const [a, b] = outcomes;
+  if (a === b || !outcomes.every((o, i) => o === (i % 2 ? b : a))) return;
+  const sa = a.split("\u0000")[0];
+  const sb = b.split("\u0000")[0];
+  const name = (sig) => {
+    try {
+      return JSON.parse(sig)[0];
+    } catch {
+      return "";
+    }
+  };
+  if (LOOP_EXEMPT.has(name(sa)) && LOOP_EXEMPT.has(name(sb))) return;
+  stuckPair.add(sa);
+  stuckPair.add(sb);
 }
 
 function pushToolResult(conversation, call, result) {
@@ -822,7 +891,7 @@ function pushToolResult(conversation, call, result) {
 function truncateForModel(result) {
   const s = JSON.stringify(result);
   if (s.length <= 12000) return result;
-  return { ok: result.ok, note: "result truncated", preview: s.slice(0, 12000) };
+  return { ok: result.ok, note: "result truncated", preview: s.slice(0, 12000).toWellFormed() };
 }
 
 function summarizeResult(name, r) {

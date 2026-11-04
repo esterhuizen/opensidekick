@@ -11,6 +11,7 @@ import {
   HISTORY_NOTICE_KEY,
   SENSITIVE_NOTE,
   HISTORY_NOTICE,
+  SCHEDULED_MAX_STEPS,
 } from "../common/constants.js";
 import {
   loadConfig,
@@ -54,7 +55,9 @@ let historyQueue = Promise.resolve(); // serializes every chat-history read-modi
 let storageFullWarned = false;
 const pendingPermissions = new Map(); // id -> resolve fn
 const pendingPlans = new Map(); // id -> resolve fn
-let permissionSeq = 0;
+// Random start: a card left open across a worker restart can't answer a new
+// prompt that would otherwise reuse its id.
+let permissionSeq = Math.floor(Math.random() * 1e9);
 let pendingSeed = null; // task text queued by a context-menu action
 let recording = null; // { steps, tabId, startUrl, lastClickAt, lastUrl }
 let keepAliveTimer = null;
@@ -766,7 +769,8 @@ async function runScheduledTask(task) {
     await runAgent({
       conversation,
       // Unattended runs act without asking (no one is watching to approve).
-      config: { ...config, settings: { ...config.settings, autonomy: "auto" } },
+      // and with a small step cap of their own: no one can stop a stuck run.
+      config: { ...config, settings: { ...config.settings, autonomy: "auto", maxSteps: Math.min(config.settings.maxSteps || SCHEDULED_MAX_STEPS, SCHEDULED_MAX_STEPS) } },
       provider,
       initialTabId: tabId,
       signal: controller.signal,
