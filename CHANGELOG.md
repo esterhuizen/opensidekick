@@ -5,6 +5,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Long tasks keep going.** When the agent stops mid-task to report progress
+  or ask "shall I continue?", it is reminded to carry on (twice at most), so you
+  no longer have to type "go". The step limit is now a checkpoint: at 100 steps
+  (was 25) the side panel asks whether to keep going, and "Keep going" gives
+  it another batch with the same site approvals. Settings still at the old 25
+  move to 100 once.
+- **The agent knows where it is.** Every model call is told that it runs in a
+  side panel, that "this" means the current tab, the tab's address (without
+  its query string) and title, and today's date and time zone. On banking,
+  payment and crypto sites, and on sites your rules keep it off, it gets the
+  site name only.
+- **Selected text is used.** Text you select on the page before asking is
+  passed along, marked as page content. Not on sensitive sites, and not where
+  your rules stop the agent reading.
+- **Long tasks stay fast.** Older page reads and screenshots are shortened
+  before each model call (the newest read of each kind stays whole), so an
+  11-screen task doesn't send every old page again on every step.
+
+### Added
+
+- **`ask_user` tool.** When the agent needs something only you can give, it
+  asks, and the run ends on the question; your reply continues the task.
+
 ## [0.4.2] — 2026-10-27
 
 ### Security

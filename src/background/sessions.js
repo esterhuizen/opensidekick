@@ -64,7 +64,9 @@ export function visibleTurns(messages) {
       let text = typeof m.content === "string" ? m.content.trim() : "";
       if (!text && Array.isArray(m.toolCalls)) {
         const fin = m.toolCalls.find((t) => t && t.name === "finish" && t.args && t.args.summary);
+        const ask = m.toolCalls.find((t) => t && t.name === "ask_user" && t.args && t.args.question);
         if (fin) text = String(fin.args.summary);
+        else if (ask) text = String(ask.args.question);
       }
       if (!text) continue;
       const prev = out[out.length - 1];

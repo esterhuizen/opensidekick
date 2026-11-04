@@ -625,6 +625,7 @@ async function handleRunTask(msg) {
     emit,
     requestPermission,
     requestPlanApproval,
+    requestContinue,
     saveSitePermission: (origin, value) => setSitePermission(origin, value),
   })
     .catch((e) => emit({ kind: "error", error: String(e.message || e) }))
@@ -789,6 +790,7 @@ async function runScheduledTask(task) {
       // No UI to answer prompts — sensitive actions are declined (safe default).
       requestPermission: async () => "decline",
       requestPlanApproval: async () => false,
+      requestContinue: async () => false, // unattended: the step limit is final
       saveSitePermission: () => {},
     });
   } catch (e) {
@@ -893,6 +895,19 @@ function requestPlanApproval(plan) {
   return new Promise((resolve) => {
     pendingPlans.set(id, resolve);
     chrome.runtime.sendMessage({ type: MSG.PLAN_REQUEST, id, plan }).catch(() => {
+      pendingPlans.delete(id);
+      resolve(false);
+    });
+  });
+}
+
+// The run used its step budget: ask the side panel whether to keep going.
+// Resolves to true/false; answered through PLAN_RESPONSE.
+function requestContinue(steps) {
+  const id = ++permissionSeq;
+  return new Promise((resolve) => {
+    pendingPlans.set(id, resolve);
+    chrome.runtime.sendMessage({ type: MSG.CONTINUE_REQUEST, id, steps }).catch(() => {
       pendingPlans.delete(id);
       resolve(false);
     });

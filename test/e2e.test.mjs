@@ -36,6 +36,7 @@ let sawImage = false; // set by the mock when a request carries an image part
 let lastImageUrl = ""; // the most recent image data URI the mock received
 let probeRequests = []; // { model, kind } per testModel probe the mock answered
 let probeDelayMs = 0; // holds the tools probe open, so a run can be observed/cancelled
+let nudgeCount = 0; // keep-going reminders the mock has seen
 let lastSystem = ""; // the system prompt of the most recent agent (non-probe) request
 const HOSTED_ALIAS = "hosted.test"; // mapped onto the mock by --host-resolver-rules
 const check = (cond, msg) => {
@@ -128,6 +129,16 @@ const MD_ANSWER =
 
 // --- Mock model: scripts multi-step agentic tasks over the tool protocol. ---
 function decide(messages) {
+  // The agent's keep-going reminder after a text-only reply mid-task: a model
+  // whose task is done calls finish with an empty summary, as told.
+  const last = messages[messages.length - 1];
+  if (last && last.role === "user" && /^Keep going until the whole task is done/.test(String(last.content || ""))) {
+    nudgeCount++;
+    if (/long job with check-ins/.test((messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase()) && nudgeCount === 1) {
+      return { kind: "tool", name: "scroll", args: { direction: "down" } };
+    }
+    return { kind: "tool", name: "finish", args: { summary: "" } };
+  }
   const firstUser = (messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase();
   const toolMsgs = messages.filter((m) => m.role === "tool");
   const n = toolMsgs.length;
@@ -305,6 +316,23 @@ function decide(messages) {
   }
 
   // Checkbox: one click_element on a checkbox must leave it checked.
+  // Long task (0.5.0): act, then pause with a progress report; the agent's
+  // keep-going reminder (handled at the top) gets it to carry on and finish.
+  if (/long job with check-ins/.test(firstUser)) {
+    const agree = elements.find((e) => /agree/i.test(e.name || ""));
+    if (n === 0) return { kind: "tool", name: "read_page", args: {} };
+    if (n === 1) return { kind: "tool", name: "hover_element", args: { ref: agree?.ref } };
+    if (n === 2) return { kind: "text", text: "Screen 1 done. Shall I continue?" };
+    return { kind: "text", text: "Screen 2 done." };
+  }
+  // A plain answer after reading only: no reminder, the run ends on the text.
+  if (/summarise this/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "get_page_text", args: {} };
+    return { kind: "text", text: "summary_done" };
+  }
+  if (/which colour should/.test(firstUser)) return { kind: "tool", name: "ask_user", args: { question: "Which colour do you want: red or blue?" } };
+  if (/keep scrolling forever/.test(firstUser)) return { kind: "tool", name: "scroll", args: { direction: n % 2 ? "up" : "down" } };
+
   if (/tick the agree box/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "read_page", args: {} };
     if (n === 1) return { kind: "tool", name: "click_element", args: { ref: elements.find((e) => e.type === "checkbox")?.ref } };
@@ -1053,6 +1081,17 @@ async function main() {
         }
       });
     }, [MSG.AGENT_EVENT, MSG.PERMISSION_REQUEST, MSG.PERMISSION_RESPONSE]);
+    // Step-limit checkpoints: record them and answer from a queue (default no).
+    await optPage.evaluate(([contReq, planResp]) => {
+      window.__cont = [];
+      window.__contChoices = [];
+      chrome.runtime.onMessage.addListener((m) => {
+        if (m && m.type === contReq) {
+          window.__cont.push(m.steps);
+          chrome.runtime.sendMessage({ type: planResp, id: m.id, approved: !!window.__contChoices.shift() });
+        }
+      });
+    }, [MSG.CONTINUE_REQUEST, MSG.PLAN_RESPONSE]);
     // Every transcript note's text since the first run (the one-time chat
     // history notice is counted across the whole suite).
     await optPage.evaluate((agentEventType) => {
@@ -1148,6 +1187,47 @@ async function main() {
     const agreed = await testPage.$eval("#agree", (el) => el.checked).catch(() => null);
     const agreeClicks = await testPage.evaluate(() => window.__clicks.agree || 0);
     check(agreed === true && agreeClicks === 1, `click: the checkbox is checked after one click (checked=${agreed}, click events=${agreeClicks})`);
+
+    // --- 0.5.0 long tasks: a progress report mid-task doesn't end the run ---
+    nudgeCount = 0;
+    const lj = await drive("Do this long job with check-ins.");
+    check(toolsOf(lj.events).includes("hover_element") && toolsOf(lj.events).includes("scroll"), `long task: kept working after "Shall I continue?" (tools ${toolsOf(lj.events).join(",")})`);
+    check(nudgeCount === 2, `long task: two keep-going reminders, then it finished (saw ${nudgeCount})`);
+    check(lj.events.filter((e) => e.kind === "error").length === 0, "long task: no error events");
+    check(!lj.events.some((e) => e.kind === "finish" && e.summary), "long task: the empty finish adds no extra bubble");
+    check(/Screen 2 done/.test(answerOf(lj.events)), `long task: the last answer is the model's own text (got "${answerOf(lj.events)}")`);
+
+    nudgeCount = 0;
+    const sm = await drive("Summarise this for me.");
+    check(nudgeCount === 0 && answerOf(sm.events) === "summary_done", `context: a read-only answer ends the run without a reminder (nudges ${nudgeCount})`);
+    check(lastSystem.includes(`Current tab: ${base}/page`), "context: the system prompt names the current tab");
+    check(lastSystem.includes('Tab title (written by the website') && lastSystem.includes('"Test Search"'), "context: the tab title is given, marked as website data");
+    check(/"this", "here", "this page"/.test(lastSystem) && /Never answer that you can't see the page/.test(lastSystem), "context: the prompt says 'this' means the current tab");
+
+    // Selected text on the page reaches the model as marked page data.
+    await testPage.evaluate(() => {
+      const r = document.createRange();
+      r.selectNodeContents(document.querySelector("h1"));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await drive("Summarise this selection.");
+    check(lastSystem.includes("<<<SELECTION") && /Test Search Page/.test(lastSystem.split("<<<SELECTION")[1] || ""), "context: the user's selection is passed, fenced as page data");
+    await testPage.evaluate(() => window.getSelection().removeAllRanges());
+
+    const ask = await drive("Paint it — which colour should I use?");
+    const askFin = ask.events.find((e) => e.kind === "finish");
+    check(askFin && askFin.question === true && /red or blue/.test(askFin.summary), `ask_user: the question is shown and the turn ends (got "${askFin && askFin.summary}")`);
+    check(!toolsOf(ask.events).length || toolsOf(ask.events).every((t) => t !== "ask_user"), "ask_user: not shown as a page action");
+
+    // Step limit: a checkpoint asks to keep going; yes extends, no stops.
+    await optPage.evaluate(() => { window.__cont = []; window.__contChoices = [true, false]; });
+    const sc = await drive("Keep scrolling forever.");
+    const conts = await optPage.evaluate(() => window.__cont);
+    check(conts.length === 2 && conts[0] === 15 && conts[1] === 30, `step limit: asked at 15 and again at 30 steps (got ${JSON.stringify(conts)})`);
+    check(toolsOf(sc.events).filter((t) => t === "scroll").length === 30, `step limit: "keep going" gave it another batch (${toolsOf(sc.events).length} tool calls)`);
+    check(/I stopped after 30 steps/.test(answerOf(sc.events)), `step limit: "stop here" ends the run with a note (got "${answerOf(sc.events)}")`);
 
     // --- read_console + read_network via the debugger (CDP) ---
     // (Also verifies (C) the on-page activity overlay appears and clears — this
@@ -2193,7 +2273,9 @@ async function main() {
           "identity: the system prompt names the model and the provider",
         );
         check(
-          !lastSystem.includes(MOCK_KEY) && !lastSystem.includes(`${base}/v1`) && !lastSystem.includes(new URL(base).host),
+          // The tab under test is served from the mock's host too, so the host
+          // may appear in the "where you are" note; it must not in the rest.
+          !lastSystem.includes(MOCK_KEY) && !lastSystem.includes(`${base}/v1`) && !lastSystem.split("Where you are:")[0].includes(new URL(base).host),
           "identity: the system prompt carries neither the API key nor the base URL",
         );
       } finally {

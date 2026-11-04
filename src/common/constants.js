@@ -204,7 +204,8 @@ export const DEFAULT_SETTINGS = {
   //                else prompts first — even reads, even in auto mode.
   siteAccess: "all",
   // Hard ceiling on agent tool-calling iterations per task (prevents runaways).
-  maxSteps: 25,
+  // When it is reached, the side panel asks whether to keep going.
+  maxSteps: 100,
   // Expose a screenshot tool so vision-capable models can see the page on demand.
   // On by default (matches other browser agents); turn off for text-only models.
   enableVision: true,
@@ -292,7 +293,7 @@ export const MSG = {
   STOP_TASK: "stop_task",
   NEW_CHAT: "new_chat",
   PERMISSION_RESPONSE: "permission_response",
-  PLAN_RESPONSE: "plan_response",
+  PLAN_RESPONSE: "plan_response", // also answers CONTINUE_REQUEST (same yes/no shape)
   RUN_SCHEDULED: "run_scheduled",
   START_RECORDING: "start_recording",
   STOP_RECORDING: "stop_recording",
@@ -307,6 +308,7 @@ export const MSG = {
   AGENT_EVENT: "agent_event", // { kind, ... } streamed progress
   PERMISSION_REQUEST: "permission_request",
   PLAN_REQUEST: "plan_request",
+  CONTINUE_REQUEST: "continue_request", // step limit reached: keep going?
   RECORDING_STEP: "recording_step", // { step } as the user records
   // worker <-> content script
   CS_RECORD: "cs_record", // { on: bool } arm/disarm recording listeners

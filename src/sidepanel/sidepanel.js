@@ -119,6 +119,7 @@ async function init() {
     if (msg.type === MSG.AGENT_EVENT) handleEvent(msg);
     else if (msg.type === MSG.PERMISSION_REQUEST) showPermission(msg);
     else if (msg.type === MSG.PLAN_REQUEST) showPlan(msg);
+    else if (msg.type === MSG.CONTINUE_REQUEST) showContinue(msg);
     else if (msg.type === MSG.RECORDING_STEP) {
       recCount = msg.count || recCount + 1;
       updateRecBanner();
@@ -592,7 +593,7 @@ function handleEvent(ev) {
       addNote("Plan declined — nothing was done.");
       break;
     case "finish":
-      addFinish(ev.summary);
+      if (ev.summary) addFinish(ev.summary);
       break;
     case "mcp_connected":
       addNote(`Connected to MCP server “${ev.server}” (${ev.count} tool${ev.count === 1 ? "" : "s"})`, "dot");
@@ -867,6 +868,29 @@ function addNote(text, icon, action) {
     btn.addEventListener("click", action.onClick);
     el.appendChild(btn);
   }
+  els.messages.appendChild(el);
+  scroll();
+}
+
+function showContinue(req) {
+  sealLog();
+  const el = document.createElement("div");
+  el.className = "perm-card plan-card";
+  el.innerHTML = `
+    <h3>Keep going?</h3>
+    <p>The agent has taken ${escapeHtml(String(req.steps || ""))} steps on this task. It can keep going, or stop here.</p>
+    <div class="perm-buttons">
+      <button class="primary" data-approved="1">Keep going</button>
+      <button data-approved="0">Stop here</button>
+    </div>`;
+  el.querySelectorAll("button").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      el.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      const approved = btn.dataset.approved === "1";
+      send({ type: MSG.PLAN_RESPONSE, id: req.id, approved });
+      el.querySelector(".perm-buttons").outerHTML = `<p class="muted-note">${approved ? "Continuing." : "Stopped."}</p>`;
+    }),
+  );
   els.messages.appendChild(el);
   scroll();
 }

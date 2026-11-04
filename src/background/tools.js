@@ -250,8 +250,21 @@ export const TOOL_DEFS = [
       "summary of the result for the user.",
     parameters: {
       type: "object",
-      properties: { summary: { type: "string", description: "Summary of the outcome." } },
+      properties: { summary: { type: "string", description: "Summary of the outcome. Empty if your last message already told the user." } },
       required: ["summary"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "ask_user",
+    description:
+      "Ask the user a question and end this turn; their reply arrives as the next message. " +
+      "Use it only when you need something only the user can give: a choice between options, " +
+      "missing details, or a login or CAPTCHA they must handle. Never use it to ask whether to continue.",
+    parameters: {
+      type: "object",
+      properties: { question: { type: "string", description: "The question, short and specific." } },
+      required: ["question"],
       additionalProperties: false,
     },
   },
