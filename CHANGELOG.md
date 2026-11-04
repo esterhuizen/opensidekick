@@ -5,16 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-04
+
 ### Changed
 
-- **Long tasks keep going.** When the agent stops mid-task to report progress
-  or ask "shall I continue?", it is reminded to carry on (twice at most), so you
-  no longer have to type "go". The step limit is now a checkpoint: at 250 steps
+- **Long tasks keep going.** When the agent stops mid-task just to report
+  progress, it is reminded to carry on (twice at most), so you no longer have
+  to type "go". A question it asks you is left for you to answer. The step limit is now a checkpoint: at 100 steps
   (was 25) the side panel asks whether to keep going, and "Keep going" gives
   it another batch with the same site approvals. The card and the stop message
   say it was your step limit and where to change it (Settings → “Steps before
-  asking to keep going”, now up to 1000). Settings still at the old 25
-  move to 250 once.
+  asking to keep going”, up to 500). Settings still at the old 25
+  move to 100 once.
 - **The agent knows where it is.** It is told that it runs in a side panel,
   that "this" means the current tab, the site the task started on (hostname
   only) and today's date. Page titles, addresses and other page-written text
