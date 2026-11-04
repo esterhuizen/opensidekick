@@ -11,7 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   or ask "shall I continue?", it is reminded to carry on (twice at most), so you
   no longer have to type "go". The step limit is now a checkpoint: at 250 steps
   (was 25) the side panel asks whether to keep going, and "Keep going" gives
-  it another batch with the same site approvals. Settings still at the old 25
+  it another batch with the same site approvals. The card and the stop message
+  say it was your step limit and where to change it (Settings → “Steps before
+  asking to keep going”, now up to 1000). Settings still at the old 25
   move to 250 once.
 - **The agent knows where it is.** Every model call is told that it runs in a
   side panel, that "this" means the current tab, the tab's address (without

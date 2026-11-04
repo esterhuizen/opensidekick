@@ -877,13 +877,15 @@ function showContinue(req) {
   const el = document.createElement("div");
   el.className = "perm-card plan-card";
   el.innerHTML = `
-    <h3>Keep going?</h3>
-    <p>The agent has taken ${escapeHtml(String(req.steps || ""))} steps on this task. It can keep going, or stop here.</p>
+    <h3>Step limit reached — keep going?</h3>
+    <p>The agent has taken ${escapeHtml(String(req.steps || ""))} steps on this task and paused at your step limit. It can keep going, or stop here.</p>
+    <p class="muted-note">You can change the limit in Settings → “Steps before asking to keep going”. <button type="button" class="note-action" data-settings="1">Open Settings</button></p>
     <div class="perm-buttons">
       <button class="primary" data-approved="1">Keep going</button>
       <button data-approved="0">Stop here</button>
     </div>`;
-  el.querySelectorAll("button").forEach((btn) =>
+  el.querySelector("[data-settings]").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  el.querySelectorAll(".perm-buttons button").forEach((btn) =>
     btn.addEventListener("click", () => {
       el.querySelectorAll("button").forEach((b) => (b.disabled = true));
       const approved = btn.dataset.approved === "1";

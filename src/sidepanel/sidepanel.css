@@ -958,7 +958,8 @@ body {
   position: relative;
   top: 2px;
 }
-.note .note-action {
+.note .note-action,
+.plan-card .note-action {
   flex: 0 0 auto;
   margin-left: auto;
   align-self: center;
@@ -974,7 +975,8 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
-.note .note-action:hover {
+.note .note-action:hover,
+.plan-card .note-action:hover {
   background: linear-gradient(var(--os-hover), var(--os-hover)) var(--os-surface);
 }
 

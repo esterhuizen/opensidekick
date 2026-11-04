@@ -731,7 +731,7 @@ export async function runAgent(deps) {
 
   emit({
     kind: "assistant_end",
-    content: `I stopped after ${stepLimit} steps to avoid running too long. Ask me to continue if you'd like.`,
+    content: `I stopped after ${stepLimit} steps: that is your step limit. Ask me to continue if you'd like. You can change the limit in Settings → "Steps before asking to keep going".`,
   });
   emit({ kind: "done" });
   } finally {

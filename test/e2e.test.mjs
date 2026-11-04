@@ -1227,7 +1227,7 @@ async function main() {
     const conts = await optPage.evaluate(() => window.__cont);
     check(conts.length === 2 && conts[0] === 15 && conts[1] === 30, `step limit: asked at 15 and again at 30 steps (got ${JSON.stringify(conts)})`);
     check(toolsOf(sc.events).filter((t) => t === "scroll").length === 30, `step limit: "keep going" gave it another batch (${toolsOf(sc.events).length} tool calls)`);
-    check(/I stopped after 30 steps/.test(answerOf(sc.events)), `step limit: "stop here" ends the run with a note (got "${answerOf(sc.events)}")`);
+    check(/I stopped after 30 steps: that is your step limit/.test(answerOf(sc.events)) && /Settings/.test(answerOf(sc.events)), `step limit: "stop here" ends the run with a note (got "${answerOf(sc.events)}")`);
 
     // --- read_console + read_network via the debugger (CDP) ---
     // (Also verifies (C) the on-page activity overlay appears and clears — this
