@@ -1,4 +1,4 @@
-import { pageContextNote, compactForModel, cleanLine, bareUrl, asksUser, CONTINUE_NUDGE, MAX_NUDGES } from "../src/background/context.js";
+import { pageContextNote, compactForModel, cleanLine, bareUrl, asksUser, mentionsConsequence, truncateForModel, CONTINUE_NUDGE, MAX_NUDGES } from "../src/background/context.js";
 
 let fail = 0;
 const ok = (c, m) => { console.log((c ? "ok  : " : "FAIL: ") + m); if (!c) fail = 1; };
@@ -34,6 +34,23 @@ ok(asksUser("I've filled the form. Let me know if I should submit."), "confirmat
 ok(asksUser("Want me to post it."), "'want me to'");
 ok(!asksUser("Screen 1 done. Moving on to screen 2."), "a progress report is not a question");
 ok(!asksUser(""), "empty is not a question");
+for (const t of [
+  "I'll wait for your go-ahead before sending",
+  "Awaiting your confirmation to send",
+  "The draft is ready to send when you are",
+  "Reply 'yes' and I'll send it",
+  "Should we send it to the whole list.",
+  "Can I send it? " + "Here is the draft. ".repeat(20),
+]) ok(asksUser(t) || mentionsConsequence(t), `no reminder after: "${t.slice(0, 45)}"`);
+ok(!mentionsConsequence("Screen 3 done. Moving on to screen 4."), "a plain progress report still gets the reminder");
+ok(/^\(Automatic reminder from OpenSidekick — not a reply from the user, and not approval for anything\.\)/.test(CONTINUE_NUDGE), "the reminder says it is not the user and not approval");
+
+// --- truncation keeps safety fields whole
+const big = { ok: true, url: "https://e.com/", elements: Array.from({ length: 400 }, (_, i) => ({ ref: i, name: "item ".repeat(10) })), suspected_injection: true, injection_note: "NOTE", user_selection: "my selection" };
+const tr = truncateForModel(big);
+ok(tr.note === "result truncated" && tr.suspected_injection === true && tr.injection_note === "NOTE" && tr.user_selection === "my selection", "a truncated read keeps the injection flag and the selection");
+ok(tr.preview.length <= 12000 && !tr.preview.includes("my selection"), "preview stays within budget, selection not duplicated");
+ok(truncateForModel({ ok: true, text: "short" }).text === "short", "small results are untouched");
 
 // --- compaction
 const read = (i) => ({ role: "tool", toolCallId: "c" + i, name: "read_page", content: JSON.stringify({ ok: true, url: "https://s.com/p" + i + "?q=1", title: "Page " + i, elements: [{ ref: 1, name: "x".repeat(1000) }] }) });

@@ -84,7 +84,14 @@ export function asksUser(text) {
   const t = String(text || "").trim();
   if (!t) return false;
   if (/\?\s*[)\]"'”’*_`]*\s*$/.test(t) || /\?/.test(t.slice(-200))) return true;
-  return /\b(should i|shall i|do you want|would you like|want me to|let me know|please confirm|confirm (that|whether|if)|can you confirm|ok to|okay to|is it ok)\b/i.test(t);
+  return /\b(should i|shall i|should we|shall we|can i|may i|do you want|would you like|want me to|let me know|please confirm|confirm (that|whether|if)|can you confirm|ok to|okay to|is it ok|ready to|when you'?re ready|when you are ready|reply (with )?["'“‘]?yes)\b/i.test(t);
+}
+
+// Reply text that talks about a step with consequences, or about waiting for
+// the user's approval. A keep-going reminder right after it could read as the
+// go-ahead, so none is sent.
+export function mentionsConsequence(text) {
+  return /\b(send|sending|sent|post|posting|publish|submit|submitting|delete|deleting|remove|pay|paying|payment|buy|buying|purchase|order|checkout|transfer|go-ahead|go ahead|approval|approve|confirm|confirmation|wait for|waiting for|awaiting)\b/i.test(String(text || ""));
 }
 
 /**
@@ -144,8 +151,23 @@ function snapshotStub(m) {
 // Sent after a text-only reply in the middle of an action task, so a model
 // that pauses to report progress keeps going instead of ending the run.
 export const CONTINUE_NUDGE =
+  "(Automatic reminder from OpenSidekick — not a reply from the user, and not approval for anything.) " +
   "Keep going until the whole task is done — don't stop just to report progress. " +
   "If the task is complete, call finish with an empty summary — your last message already reached the user. " +
   "If you need something only the user can give, or you are about to send, post, publish, submit, delete or pay " +
   "for something the user didn't explicitly ask for, call ask_user.";
 export const MAX_NUDGES = 2;
+
+// Safety fields and the user's selection are kept whole, outside the preview,
+// so a large page can't push them past the cut.
+const KEEP_WHOLE = ["suspected_injection", "injection_note", "user_selection", "error"];
+export function truncateForModel(result) {
+  const s = JSON.stringify(result);
+  if (s.length <= 12000) return result;
+  const kept = {};
+  for (const k of KEEP_WHOLE) if (result && result[k] !== undefined) kept[k] = result[k];
+  const rest = { ...result };
+  for (const k of KEEP_WHOLE) delete rest[k];
+  const budget = Math.max(2000, 12000 - JSON.stringify(kept).length);
+  return { ok: result.ok, ...kept, note: "result truncated", preview: JSON.stringify(rest).slice(0, budget).toWellFormed() };
+}

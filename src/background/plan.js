@@ -46,6 +46,7 @@ export function hostFromDomain(d) {
     .toLowerCase();
   if (!h || !/^[a-z0-9.\-]+$/.test(h)) return "";
   if (h === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
+  if (/^[\d.]+$/.test(h)) return ""; // a partial IP
   if (!h.includes(".") || h.startsWith(".") || PUBLIC_SUFFIXES.has(h)) return "";
   return h;
 }

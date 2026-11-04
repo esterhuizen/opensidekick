@@ -10,7 +10,7 @@ import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, origi
 import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { touchesSensitiveSite } from "./sessions.js";
-import { pageContextNote, compactForModel, asksUser, CONTINUE_NUDGE, MAX_NUDGES } from "./context.js";
+import { pageContextNote, compactForModel, asksUser, mentionsConsequence, truncateForModel, CONTINUE_NUDGE, MAX_NUDGES } from "./context.js";
 import { connectServer, listTools, callTool, closeSession, mcpToolName, flattenMcpContent } from "./mcp.js";
 import { resolveSource, classifyInjection, classifyAction, createBreaker, thresholdFor, featureEnabled } from "./decisions.js";
 
@@ -297,7 +297,7 @@ export async function runAgent(deps) {
       // going (bounded) instead of ending the run on the user.
       // Never when the reply asks the user something (a reminder would answer
       // "should I send it?" for them), or after a page tried to give orders.
-      if (acted && nudges < MAX_NUDGES && !injectionSeen && !asksUser(result.content)) {
+      if (acted && nudges < MAX_NUDGES && !injectionSeen && !asksUser(result.content) && !mentionsConsequence(result.content)) {
         nudges++;
         conversation.push({ role: "user", internal: true, content: CONTINUE_NUDGE });
         continue;
@@ -569,7 +569,9 @@ export async function runAgent(deps) {
           // never on a sensitive site, which asks per action. The host is the
           // parsed one, so "chase.com?.approved.com" is chase.com.
           const currentHost = hostOf(url);
-          const preApproved = currentHost && [...approvedHosts].some((h) => currentHost === h || currentHost.endsWith("." + h));
+          // Exact host (or its www.): a plan's "example.com" doesn't approve
+          // every subdomain, which on shared hosts belong to other people.
+          const preApproved = currentHost && [...approvedHosts].some((h) => currentHost === h || currentHost === "www." + h);
           if (preApproved) verdict = { decision: "allow" };
         }
 
@@ -854,7 +856,7 @@ async function readSelection(tabId, config) {
 function noteOutcome(outcomes, stuckPair, signature, result) {
   let r = "";
   try {
-    r = JSON.stringify(result).slice(0, 4000);
+    r = JSON.stringify(result);
   } catch {
     /* unserialisable: never equal */
     r = String(Math.random());
@@ -888,12 +890,6 @@ function pushToolResult(conversation, call, result) {
 }
 
 // Keep tool results from blowing up the context window.
-function truncateForModel(result) {
-  const s = JSON.stringify(result);
-  if (s.length <= 12000) return result;
-  return { ok: result.ok, note: "result truncated", preview: s.slice(0, 12000).toWellFormed() };
-}
-
 function summarizeResult(name, r) {
   if (r.ok === false) return r.error || "failed";
   switch (name) {

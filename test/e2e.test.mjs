@@ -132,7 +132,7 @@ function decide(messages) {
   // The agent's keep-going reminder after a text-only reply mid-task: a model
   // whose task is done calls finish with an empty summary, as told.
   const last = messages[messages.length - 1];
-  if (last && last.role === "user" && /^Keep going until the whole task is done/.test(String(last.content || ""))) {
+  if (last && last.role === "user" && /Keep going until the whole task is done/.test(String(last.content || ""))) {
     nudgeCount++;
     if (/long job with check-ins/.test((messages.find((m) => m.role === "user")?.content || "").toString().toLowerCase()) && nudgeCount === 1) {
       return { kind: "tool", name: "scroll", args: { direction: "down" } };
