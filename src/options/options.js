@@ -24,6 +24,8 @@ import {
   resolveSource,
   testDecisions,
 } from "../background/decisions.js";
+import { cdpAvailable } from "../background/cdp.js";
+import { toolToggle, jsToolSupported, CDP_HINT, JS_HINT } from "../common/browser.js";
 
 let config;
 
@@ -449,7 +451,7 @@ async function runModelTest(provider, modelInput, btn, statusEl, opts = {}) {
   const icon = { ok: "✓", warn: "⚠", fail: "✗" };
   const line = (label, res) =>
     `<span class="test-line ${res.status}">${icon[res.status]} <strong>${label}</strong> — ${escapeHtml(redactKeys(res.detail, provider.apiKey))}</span>`;
-  // The model id stays on screen: an automatic run nobody asked for has to say
+  // The model id stays on screen: an automatic run nobody started has to say
   // which model the ticks belong to — and, while it is running, where the key
   // is going, since no button was pressed to authorise that.
   const host = hostOf(provider.baseUrl);
@@ -642,8 +644,18 @@ function renderSettings() {
   $("#enable-vision").checked = !!s.enableVision;
   $("#enable-js").checked = !!s.enableJsTool;
   $("#enable-cdp").checked = !!s.enableCdp;
+  // Dead setting on Firefox: no chrome.debugger, so a box the user can turn on would promise a tool that never runs.
+  renderToolRow("#enable-cdp", "#cdp-hint", cdpAvailable(), CDP_HINT);
+  // Dead on Firefox: world: "MAIN" scripting works from 128, so this is AMO's remote-code policy, not a missing API.
+  renderToolRow("#enable-js", "#js-hint", jsToolSupported(chrome), JS_HINT);
   $("#keep-history").checked = s.keepHistory !== false;
   renderHistoryCard();
+}
+
+function renderToolRow(checkboxId, hintId, available, hint) {
+  const t = toolToggle(available, hint);
+  $(checkboxId).disabled = t.disabled;
+  if (t.hint) $(hintId).textContent = t.hint;
 }
 
 // -------------------------------------------------------------------------
@@ -686,7 +698,7 @@ async function renderHistoryCard() {
 
 const plural = (n) => (n === 1 ? "" : "s");
 const turnOffCopy = (n) =>
-  `Turn off chat history?\n\nThis deletes ${n ? `the ${n} chat${plural(n)} saved on this device and ` : ""}your prompt history. It can't be undone. The chat that's open now stays until Chrome closes.`;
+  `Turn off chat history?\n\nThis deletes ${n ? `the ${n} chat${plural(n)} saved on this device and ` : ""}your prompt history. It can't be undone. The chat that's open now stays until the browser closes.`;
 const clearCopy = (n) =>
   `Delete all chat history?\n\nThis deletes ${n ? `the ${n} chat${plural(n)} saved on this device, ` : ""}your prompt history and the open chat. It can't be undone.`;
 
