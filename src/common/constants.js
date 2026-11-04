@@ -209,7 +209,7 @@ export const DEFAULT_SETTINGS = {
   siteAccess: "all",
   // Hard ceiling on agent tool-calling iterations per task (prevents runaways).
   // When it is reached, the side panel asks whether to keep going.
-  maxSteps: 250,
+  maxSteps: 100,
   // Expose a screenshot tool so vision-capable models can see the page on demand.
   // On by default (matches other browser agents); turn off for text-only models.
   enableVision: true,

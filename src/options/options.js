@@ -598,7 +598,7 @@ function wireSettings() {
     }),
   );
   $("#max-steps").addEventListener("change", (e) => {
-    config.settings.maxSteps = clampInt(e.target.value, 1, 1000, DEFAULT_SETTINGS.maxSteps);
+    config.settings.maxSteps = clampInt(e.target.value, 1, 500, DEFAULT_SETTINGS.maxSteps);
     persist();
   });
   $("#max-tokens").addEventListener("change", (e) => {
