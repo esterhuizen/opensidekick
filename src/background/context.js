@@ -166,6 +166,7 @@ export function truncateForModel(result) {
   if (s.length <= 12000) return result;
   const kept = {};
   for (const k of KEEP_WHOLE) if (result && result[k] !== undefined) kept[k] = result[k];
+  if (kept.error !== undefined) kept.error = String(kept.error).slice(0, 2000).toWellFormed(); // the others are bounded
   const rest = { ...result };
   for (const k of KEEP_WHOLE) delete rest[k];
   const budget = Math.max(2000, 12000 - JSON.stringify(kept).length);

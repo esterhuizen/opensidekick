@@ -51,6 +51,8 @@ const tr = truncateForModel(big);
 ok(tr.note === "result truncated" && tr.suspected_injection === true && tr.injection_note === "NOTE" && tr.user_selection === "my selection", "a truncated read keeps the injection flag and the selection");
 ok(tr.preview.length <= 12000 && !tr.preview.includes("my selection"), "preview stays within budget, selection not duplicated");
 ok(truncateForModel({ ok: true, text: "short" }).text === "short", "small results are untouched");
+const huge = truncateForModel({ ok: false, error: "E".repeat(2_000_000) });
+ok(huge.error.length === 2000 && JSON.stringify(huge).length < 20000, "a huge error is capped, not kept whole");
 
 // --- compaction
 const read = (i) => ({ role: "tool", toolCallId: "c" + i, name: "read_page", content: JSON.stringify({ ok: true, url: "https://s.com/p" + i + "?q=1", title: "Page " + i, elements: [{ ref: 1, name: "x".repeat(1000) }] }) });
