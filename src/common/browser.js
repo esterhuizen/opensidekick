@@ -9,7 +9,7 @@ export function cdpSupported(ns) {
 // Exported so the options page and the suites read one string: rewording is one edit.
 export const CDP_HINT = "Not available in this browser (no debugger API)";
 
-export const JS_HINT = "Not available in this browser (no code execution)";
+export const JS_HINT = "Not available in this build";
 
 // A disabled toggle plus copy: a box the user can turn on would promise a tool that can never run.
 export function toolToggle(available, hint) {
