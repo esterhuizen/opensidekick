@@ -1,6 +1,6 @@
 # Privacy Policy — OpenSidekick
 
-_Last updated: 2026-10-11_
+_Last updated: 2026-11-05_
 
 OpenSidekick is a browser extension that runs entirely on your device. It has no
 backend server operated by the project and collects no analytics or telemetry.

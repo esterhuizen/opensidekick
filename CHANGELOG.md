@@ -5,6 +5,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-05
+
+### Added
+
+- **Use OpenSidekick from your coding agent.** Claude Code, Codex, Cursor or
+  any MCP client can use the browser tools through a small local bridge
+  (`node native/install.mjs <extension-id>`, then Settings → "Let local agents
+  use this browser"). It is off by default and Google Chrome only for now.
+  - You approve each connection in the side panel, and each call shows up
+    there as it runs.
+  - The agent works only in tabs it opens, in its own window, and never
+    sees your own tabs.
+  - Each new site asks, reads included. "Allow reading this site" and
+    "Allow actions on this site" are separate grants. Sensitive sites ask
+    every time.
+  - Uploads, key presses, drags, submitting a form and Buy/Pay/Delete/Send-like
+    clicks always ask. Agents can't run JavaScript or read the console or
+    network log.
+  - The bridge and the extension prove a shared secret to each other; the
+    secret lives in a private folder and never crosses the pipe.
+  - The `nativeMessaging` permission is optional, and it is only asked for
+    when you turn this on.
+
+  Thanks to @sharifnezhad (#12).
+- **Tab group per chat.** Tabs a chat opens join an "OpenSidekick" tab group,
+  and the agent can only list and switch to that group's tabs and the one
+  you're on. Your mail or bank in another tab stays out of reach. (#12)
+- **`upload_file`.** The agent can attach a text file it writes to a file
+  input. It never reads files from your disk. The approval card shows the
+  file's name, size and start. (#12)
+- **`read_page` search.** On a big page the agent can ask for only the
+  elements that match a few words, which helps small local models. (#12)
+- **Firefox build** (`npm run zip:firefox`), ahead of the Firefox Add-ons
+  listing. Thanks to @kurotope (#9).
+
+### Changed
+
+- Permission cards show what will be typed, uploaded or run, and the element's
+  label.
+- Password, card-number and one-time-code fields show only "(filled)" to the
+  model, never the value.
+- More order and booking words ("Place order", "Book now", "Confirm booking",
+  "Kaufen", "Bestellen") ask first.
+
+### Fixed
+
+- A screenshot is refused unless the agent's tab is in front, so it can't
+  capture another tab in the same window.
+
 ## [0.5.0] — 2026-11-04
 
 ### Changed
