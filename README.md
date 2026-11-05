@@ -262,8 +262,9 @@ Commands from outside are trusted less than your own chat:
   Those last until the agent disconnects; nothing is saved. Sensitive sites
   (banks, payments) ask every time. A site you decline stays declined, and
   after three declines the connection gets no more cards.
-- **Risky actions always ask:** Buy/Pay/Delete-like clicks, submitting a form
-  (submit or Enter) and file uploads. The card shows the whole text or file.
+- **Risky actions always ask:** clicks on a form's submit button or on a
+  Buy/Pay/Delete/Send-like label, typing with submit, any key press, drags and
+  file uploads. The card says why, and shows the whole text or file.
 - **You see every call.** Each one is logged in the side panel. With the panel
   closed, nothing runs.
 - **One call at a time**, on the tab and element you approved: if the page or

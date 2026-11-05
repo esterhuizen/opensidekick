@@ -85,6 +85,9 @@ export function handshake(info, first, onLine) {
     };
     sock.on("error", (e) => fail(e));
     sock.on("close", () => fail(new Error("closed")));
+    // A host that never sends its challenge (an old or stuck one) isn't waited on forever.
+    const timer = setTimeout(() => hostNonce == null && fail(new Error("closed")), 5000);
+    sock.on("close", () => clearTimeout(timer));
     lines(
       sock,
       (msg) => {
@@ -92,12 +95,14 @@ export function handshake(info, first, onLine) {
         if (hostNonce == null) {
           if (msg.type !== "challenge" || typeof msg.nonce !== "string") return fail(new Error("not a bridge"));
           hostNonce = msg.nonce;
+          clearTimeout(timer);
           clientNonce = crypto.randomBytes(16).toString("hex");
           sock.write(JSON.stringify({ ...first, nonce: clientNonce, mac: proof(info.token, "client", hostNonce, clientNonce) }) + "\n");
           return;
         }
         if (!proofMatches(msg.mac, proof(info.token, "host", hostNonce, clientNonce))) {
-          return fail(new Error(msg.error || "The bridge didn't prove itself."));
+          // Text from a host that didn't prove itself is not passed on.
+          return fail(new Error(msg.mac == null && msg.error === "Not authorised." ? "Not authorised." : "The bridge didn't prove itself."));
         }
         done = true;
         resolve({ sock, reply: msg });
@@ -230,6 +235,8 @@ async function hostMode() {
       if (!sock.destroyed && !sock.writableEnded) sock.end(JSON.stringify(obj) + "\n");
     };
     send({ type: "challenge", nonce: hostNonce });
+    // A connection that doesn't prove itself soon is dropped.
+    setTimeout(() => state === "new" && refuse({ error: "Not authorised." }), 10_000);
     lines(sock, async (req) => {
       if (state === "dead") return;
       if (state === "new") {

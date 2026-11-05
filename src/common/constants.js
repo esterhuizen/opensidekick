@@ -218,7 +218,7 @@ export const DEFAULT_SETTINGS = {
   // Expose console/network reading via Chrome's debugger (shows a banner).
   enableCdp: false,
   // Let local agents (Claude Code, Codex, …) use the browser tools through the
-  // native bridge. Each connection, site and action is approved in the side panel.
+  // native bridge. Connections, new sites and risky actions are approved in the side panel.
   enableExternal: false,
   // Max output tokens per model call.
   maxTokens: 4096,

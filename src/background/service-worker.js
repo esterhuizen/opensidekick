@@ -336,8 +336,20 @@ let bridgePort = null;
 let bridgeSync = null;
 // Single-flight: overlapping calls (startup, alarms, config and permission
 // events) must not start two hosts.
+let bridgeResync = false;
 function syncBridge() {
-  bridgeSync ??= syncBridgeOnce().finally(() => (bridgeSync = null));
+  // A call that arrives mid-sync runs once more afterwards: the running one
+  // may have read the config before the change that prompted this call.
+  if (bridgeSync) {
+    bridgeResync = true;
+    return bridgeSync;
+  }
+  bridgeSync = (async () => {
+    do {
+      bridgeResync = false;
+      await syncBridgeOnce();
+    } while (bridgeResync);
+  })().finally(() => (bridgeSync = null));
   return bridgeSync;
 }
 async function syncBridgeOnce() {

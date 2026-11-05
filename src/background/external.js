@@ -8,8 +8,8 @@
 //     that never takes focus. It never sees the user's tabs or a chat's tabs.
 //   - Reading or opening a site asks the first time; acting on a page asks
 //     the first time per site too, separately. Sensitive sites ask every time.
-//     Buy/Pay/Delete-like clicks, submitting a form (submit, Enter) and uploads
-//     ask every time. Nothing is saved as "always allow"; a site the user
+//     Buy/Pay/Delete-like clicks, any click on a form's submit button, typing
+//     with submit, any key press, drags and uploads ask every time. Nothing is saved as "always allow"; a site the user
 //     declines stays declined for that connection.
 //   - Every call is logged in the side panel; with no panel open, nothing runs.
 //   - Calls run one at a time, on the tab and element that were approved.
@@ -17,7 +17,7 @@
 
 import { TOOL_DEFS, executeTool, groupTab, inReach, setOverlay } from "./tools.js";
 import { evaluate, normalizeTarget, originOf, isSensitive, FOCUS_TOOLS } from "./permissions.js";
-import { detectInjection, isSensitiveActionText, INJECTION_NOTE } from "./safety.js";
+import { detectInjection, isRiskyAgentAction, INJECTION_NOTE } from "./safety.js";
 
 export const HOST_NAME = "com.opensidekick.bridge";
 // The bridge program speaks this protocol; an older copy must be reinstalled.
@@ -28,6 +28,7 @@ const MAX_DECLINES = 3;
 const PAIR_DECLINES = 3; // declined pairings before pairing pauses
 const PAIR_PAUSE_MS = 10 * 60_000;
 const PAYLOAD_MAX = 100_000; // longest text, file or script a card may approve
+const RUN_TIMEOUT_MS = 45_000; // one call's run, once approved
 // Not offered: finishing or asking belongs to a chat; JavaScript and the
 // debugger readers are too strong for a caller the user can't see.
 const NOT_OFFERED = new Set(["finish", "ask_user", "run_javascript", "read_console", "read_network"]);
@@ -49,6 +50,19 @@ export function externalTools(settings) {
 export function clientLabel(name) {
   const clean = String(name || "").replace(/[^\p{L}\p{N} ._()-]/gu, "").trim().slice(0, 40);
   return clean ? `A local agent ("${clean}")` : "A local agent";
+}
+
+// Why a call asks every time, even on a site allowed for actions; "" if it needn't.
+export function riskReason(name, args, label, submits) {
+  if (name === "upload_file") return "This uploads a file.";
+  if (name === "press_keys") return "This presses keys, which can submit or trigger shortcuts.";
+  if (name === "drag_element") return "This drags an element.";
+  if (name === "type_text" && args.submit) return "This submits a form.";
+  if (name === "click_element" || name === "double_click") {
+    if (submits) return "This button submits a form.";
+    if (isRiskyAgentAction(label)) return "This looks like a purchase, a send, or a change that may not be undone.";
+  }
+  return "";
 }
 
 // Submits a form or presses a key that may: always its own card.
@@ -120,7 +134,7 @@ export function newSession(client) {
     declined: new Set(),
     declines: 0,
     blocked: false,
-    lastElements: new Map(), // ref -> label, from the agent's last read_page
+    lastElements: new Map(), // ref -> { name, submits }, from the agent's last read_page
     readOrigin: null,
     readTab: null,
     tabId: null,
@@ -184,13 +198,20 @@ export async function pair(msg, deps, sessions, closed, pairing, now = Date.now(
   if (pairing.declines.length >= PAIR_DECLINES) {
     return { error: "Connections were declined several times, so new ones are paused for 10 minutes." };
   }
+  // One connection card at a time, so a burst can't stack up cards to misclick.
+  if (pairing.busy) return { error: "Another connection is waiting for approval. Try again in a moment." };
   const s = newSession(msg.client);
-  const choice = await card(deps, { pairing: true, client: s.client, toolName: "connect", origin: "" });
+  pairing.busy = true;
+  let choice;
+  try {
+    choice = await card(deps, { pairing: true, client: s.client, toolName: "connect", origin: "" });
+  } finally {
+    pairing.busy = false;
+  }
   if (choice === "no-panel") return { error: NO_PANEL };
-  if (choice === "timeout") return { error: "Nobody answered the connection card in time." };
   if (choice !== "once") {
     pairing.declines.push(now);
-    return { error: "The user didn't allow this connection." };
+    return { error: choice === "timeout" ? "Nobody answered the connection card in time." : "The user didn't allow this connection." };
   }
   if (closed.has(msg.conn)) return { error: "The connection closed." };
   sessions.set(msg.conn, s);
@@ -277,21 +298,21 @@ export async function gatedCall(callName, args, config, deps, s, live = () => tr
 
   // Refs are only good for the tab and site the agent last read.
   let label = "";
+  let submits = false;
   const ref = name === "drag_element" ? t.args.from_ref : t.args.ref;
   if (REF_TOOLS.has(name) || t.args.ref != null) {
     if (!s.lastElements.has(ref) || s.readOrigin !== origin || s.readTab !== t.tabId) {
       return { ok: false, error: "Unknown ref for this page. Call read_page first and use a ref it returned." };
     }
-    label = s.lastElements.get(ref);
+    ({ name: label, submits } = s.lastElements.get(ref));
   }
 
   const looks = LOOK_TOOLS.has(name);
   const grants = looks ? s.look : s.act;
-  const risky =
-    name === "upload_file" || isSubmit(name, t.args) || ((name === "click_element" || name === "double_click") && isSensitiveActionText(label));
-  if (sensitive || risky || !grants.has(origin)) {
-    const grantLabel = sensitive || risky ? "" : looks ? "Allow reading this site" : "Allow actions on this site";
-    const choice = await card(deps, { origin, toolName: name, args: t.args, label, client: s.client, sensitive, grantLabel });
+  const reason = riskReason(name, t.args, label, submits);
+  if (sensitive || reason || !grants.has(origin)) {
+    const grantLabel = sensitive || reason ? "" : looks ? "Allow reading this site" : "Allow actions on this site";
+    const choice = await card(deps, { origin, toolName: name, args: t.args, label, client: s.client, sensitive, grantLabel, reason });
     if (choice === "no-panel") return { ok: false, error: NO_PANEL };
     if (choice === "timeout") return { ok: false, error: "Nobody answered the approval card in time. Not run." };
     if (choice !== "once" && choice !== "always") {
@@ -319,12 +340,20 @@ export async function gatedCall(callName, args, config, deps, s, live = () => tr
 
   const overlay = `${s.client} is using this tab`;
   const shot = name === "take_screenshot";
-  if (s.tabId != null) await setOverlay(s.tabId, shot ? "hide" : "show", overlay);
   s.ctx.expect = REF_TOOLS.has(name) || t.args.ref != null ? label : undefined;
   let result;
+  let timer;
   try {
-    result = (await executeTool(name, t.args, s.ctx)) || { ok: false, error: "No result." };
+    // A hung page must not stall every agent's calls behind it.
+    result = await Promise.race([
+      (async () => {
+        if (s.tabId != null) await setOverlay(s.tabId, shot ? "hide" : "show", overlay);
+        return (await executeTool(name, t.args, s.ctx)) || { ok: false, error: "No result." };
+      })(),
+      new Promise((r) => (timer = setTimeout(() => r({ ok: false, error: "The page didn't finish in time. It may be stuck; try again or open another tab." }), RUN_TIMEOUT_MS))),
+    ]);
   } finally {
+    clearTimeout(timer);
     s.ctx.expect = undefined;
   }
   if (s.tabId != null && (shot || name === "open_tab" || name === "navigate")) await setOverlay(s.tabId, "show", overlay);
@@ -338,7 +367,7 @@ export async function gatedCall(callName, args, config, deps, s, live = () => tr
     return { ok: false, error: "The page moved to another site during the read. Read it again." };
   }
   if (name === "read_page" && result.ok !== false) {
-    s.lastElements = new Map((result.elements || []).map((e) => [e.ref, e.name || ""]));
+    s.lastElements = new Map((result.elements || []).map((e) => [e.ref, { name: e.name || "", submits: !!e.submits }]));
     s.readOrigin = origin;
     s.readTab = s.tabId;
   }

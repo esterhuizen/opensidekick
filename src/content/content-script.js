@@ -171,6 +171,8 @@
     if (tag === "a" && el.href) out.href = shortUrl(el.href);
     if (el.getAttribute("aria-checked")) out.checked = el.getAttribute("aria-checked");
     if (el.disabled) out.disabled = true;
+    // Clicking it submits a form, whatever its label says.
+    if (el.form && ((tag === "button" && el.type === "submit") || (tag === "input" && (el.type === "submit" || el.type === "image")))) out.submits = true;
     return out;
   }
 

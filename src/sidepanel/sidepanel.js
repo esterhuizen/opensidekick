@@ -547,7 +547,10 @@ function newChat() {
 }
 
 function clearTranscript() {
-  els.messages.querySelectorAll(".msg, .log, .note, .alert, .perm-card, .thinking").forEach((n) => n.remove());
+  // A local agent's card still waiting for an answer isn't the chat's: it stays.
+  els.messages
+    .querySelectorAll(".msg, .log, .note, .alert, .perm-card, .thinking")
+    .forEach((n) => !(n.matches(".perm-card[data-external]") && n.querySelector(".perm-buttons")) && n.remove());
   current = null;
   pendingTools = [];
   logGroup = null;
@@ -944,7 +947,8 @@ function showPermission(req) {
   el.className = "perm-card" + (req.sensitive ? " sensitive" : "");
   el.dataset.id = String(Number(req.id));
   // A local agent's card isn't part of the chat run: the chat ending leaves it be.
-  if (!req.external) el.dataset.run = "1";
+  if (req.external) el.dataset.external = "1";
+  else el.dataset.run = "1";
   const action = describeAction(req.toolName, req.args);
   // An MCP tool runs on a server, not on a page: no origin, and nothing here may
   // read as "trust this site" (a session grant for the server is all it gets).
@@ -983,6 +987,7 @@ function showPermission(req) {
   el.innerHTML = `
     <h3>${escapeHtml(title)}</h3>
     <p>${intro}</p>
+    ${req.reason ? `<p><strong>${escapeHtml(req.reason)}</strong></p>` : ""}
     ${detail ? `<pre class="perm-detail">${escapeHtml(detail)}</pre>` : ""}
     ${req.why ? `<p class="muted-note">${escapeHtml(req.why)}.</p>` : ""}
     <div class="perm-buttons">
@@ -1035,7 +1040,8 @@ function permDetail(req) {
       lines.push(`Option: ${clip(a.value, 120)}`);
       break;
   }
-  return lines.join("\n");
+  // Bidi and other invisible characters could disguise the text: show them.
+  return lines.join("\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, (c) => `<U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}>`);
 }
 
 function describeAction(name, args) {

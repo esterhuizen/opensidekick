@@ -17,7 +17,7 @@ const INJECTION_PATTERNS = [
 // Element labels for high-consequence actions that should always be confirmed,
 // regardless of site or autonomy mode (purchases, deletions, money movement).
 const SENSITIVE_ACTION_PATTERNS = [
-  /\b(?:buy|purchase|pay|payment|pay\s+now|checkout|check\s*out|place\s+order|order\s+now|complete\s+(?:order|purchase|payment)|confirm\s+(?:order|payment|purchase)|subscribe|donate)\b/i,
+  /\b(?:buy|purchase|pay|payment|pay\s+now|checkout|check\s*out|place\s+(?:your\s+)?order|submit\s+(?:your\s+)?order|order\s+now|book\s+now|reserve\s+now|complete\s+(?:order|purchase|payment|booking)|confirm\s+(?:order|payment|purchase|booking|reservation)|subscribe|donate|jetzt\s+kaufen|kaufen|bestellen)\b/i,
   /\b(?:delete|delete\s+account|deactivate|close\s+account|permanently\s+(?:delete|remove)|cancel\s+(?:subscription|account|membership))\b/i,
   /\b(?:transfer|send\s+money|wire\s+transfer|withdraw|make\s+payment)\b/i,
 ];
@@ -30,6 +30,16 @@ export function detectInjection(text) {
     if (m) return { suspected: true, matched: m[0].slice(0, 80) };
   }
   return { suspected: false, matched: null };
+}
+
+// Wider net for callers the user can't see (local agents): undoable-looking
+// labels that often aren't.
+const AGENT_RISKY_PATTERNS = [/\b(?:remove|move\s+to\s+trash|trash|terminate|archive|unsubscribe|revoke|reset|confirm|finish|submit|send|publish|post)\b/i];
+
+/** isSensitiveActionText, plus labels risky enough to always ask a local agent. */
+export function isRiskyAgentAction(name) {
+  const s = String(name || "");
+  return isSensitiveActionText(s) || AGENT_RISKY_PATTERNS.some((re) => re.test(s));
 }
 
 /** True if an element's label/text indicates a high-consequence action. */

@@ -160,6 +160,16 @@ const code = await new Promise((r) => second.on("exit", r));
 const info2 = JSON.parse(fs.readFileSync(path.join(STATE, "bridge.json"), "utf8"));
 check(code === 0 && info2.token === info.token, "a second host leaves a live bridge alone");
 
+// A server that never sends a challenge isn't waited on forever.
+const dumbPath = UNIX ? path.join(HOME, "dumb.sock") : `\\\\.\\pipe\\osk-dumb-${process.pid}`;
+const dumb = net.createServer(() => {}).listen(dumbPath);
+await new Promise((r2) => dumb.on("listening", r2));
+const t0 = Date.now();
+let dumbErr = "";
+await handshake({ pipe: dumbPath, token: info.token }, { type: "probe" }).catch((e) => (dumbErr = String(e.message)));
+check(dumbErr && Date.now() - t0 < 8000, "a silent server is given up on within seconds");
+dumb.close();
+
 host.stdin.end();
 check(await waitFor(() => !fs.existsSync(path.join(STATE, "bridge.json"))), "the host removes bridge.json when Chrome closes the port");
 
@@ -191,7 +201,15 @@ let nextTab = 10;
 // The user's own tab, in the focused window.
 const tabs = { 1: { id: 1, url: "https://mail.example.com/inbox", groupId: -1, windowId: 1, active: true } };
 const windows = [];
-let page = { elements: [{ ref: 1, name: "Next" }, { ref: 2, name: "Delete account" }, { ref: 3, name: "Email" }] };
+let page = {
+  elements: [
+    { ref: 1, name: "Next" },
+    { ref: 2, name: "Delete account" },
+    { ref: 3, name: "Email" },
+    { ref: 4, name: "Place your order" },
+    { ref: 5, name: "Go", submits: true },
+  ],
+};
 const ran = [];
 const newTab = (url, windowId) => (tabs[nextTab] = { id: nextTab++, url, groupId: -1, windowId, active: true, status: "complete" });
 globalThis.chrome = {
@@ -224,7 +242,7 @@ globalThis.chrome = {
     },
   },
 };
-const { handle, pair, gatedCall, externalTools, toMcp, newSession, clientLabel, isSubmit, isBridgeGroup } = await import("../src/background/external.js");
+const { handle, pair, gatedCall, externalTools, toMcp, newSession, clientLabel, isSubmit, isBridgeGroup, riskReason } = await import("../src/background/external.js");
 const { DEFAULT_SETTINGS } = await import("../src/common/constants.js");
 
 const asked = [];
@@ -268,6 +286,20 @@ r = await pair({ type: "hello", conn: 22, client: "spam", protocol: 2 }, deps, s
 check(/paused/.test(r.error) && asked.length === nPair, "after three declined pairings, new ones pause without a card");
 r = await pair({ type: "hello", conn: 22, client: "spam", protocol: 2 }, deps, sessions, closed, pairing, Date.now() + 11 * 60_000);
 check(asked.length === nPair + 1, "the pause ends after 10 minutes");
+// One connection card at a time.
+const releases = [];
+answer = () => new Promise((r2) => releases.push(r2));
+const firstPair = pair({ type: "hello", conn: 30, client: "a", protocol: 2 }, deps, sessions, closed, { declines: [] });
+const shared = { declines: [] };
+const p1 = pair({ type: "hello", conn: 31, client: "a", protocol: 2 }, deps, sessions, closed, shared);
+await sleep(10);
+r = await pair({ type: "hello", conn: 32, client: "b", protocol: 2 }, deps, sessions, closed, shared);
+check(/Another connection is waiting/.test(r.error), "a second pairing while one card is up gets no card of its own");
+releases[1]("timeout");
+releases[0]("once");
+await Promise.all([firstPair, p1]);
+answer = "once";
+check(shared.declines.length === 1, "an unanswered connection card counts toward the pause");
 answer = "once";
 cfg = config({ enableExternal: false });
 r = await handle({ type: "list", conn: 1 }, deps, sessions);
@@ -314,6 +346,13 @@ r = await gatedCall("press_keys", { keys: ["Enter"] }, cfg, deps, s);
 check(asked.length === n1 + 2, "pressing Enter asks every time");
 r = await gatedCall("click_element", { ref: 2 }, cfg, deps, s);
 check(asked.length === n1 + 3 && asked.at(-1).label === "Delete account", "a Delete-like click asks every time, naming the element");
+r = await gatedCall("click_element", { ref: 4 }, cfg, deps, s);
+check(asked.length === n1 + 4 && /purchase/.test(asked.at(-1).reason), "'Place your order' asks every time, saying why");
+r = await gatedCall("click_element", { ref: 5 }, cfg, deps, s);
+check(asked.length === n1 + 5 && /submits a form/.test(asked.at(-1).reason), "a form's submit button asks every time, whatever its label");
+r = await gatedCall("press_keys", { keys: ["Tab"] }, cfg, deps, s);
+check(asked.length === n1 + 6 && /keys/.test(asked.at(-1).reason), "any key press asks (shortcuts can delete or send)");
+check(riskReason("click_element", {}, "Remove item", false) && !riskReason("click_element", {}, "Next", false), "agent-only risky labels (Remove, …) ask; plain ones don't");
 r = await gatedCall("upload_file", { ref: 1, name: "a.txt", content: "secret" }, cfg, deps, s);
 check(asked.at(-1).toolName === "upload_file" && asked.at(-1).args.content === "secret", "an upload asks every time and the card gets the content");
 r = await gatedCall("type_text", { ref: 3, text: "x".repeat(100_001) }, cfg, deps, s);
