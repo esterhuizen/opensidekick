@@ -26,5 +26,22 @@ ok(userGave([{ role: "user", content: "pw a.b*c(d)" }], "a.b*c(d)"), "regex char
 ok(!userGave([{ role: "user", content: "pw aXb" }], "a.b"), "a dot is not a wildcard");
 ok(!userGave([{ role: "user", content: ["Hunter-77"] }], "Hunter-77"), "non-string content is not trusted");
 
+// Page text that reaches a user message through the extension's own features.
+const menu = [{ role: "user", content: 'Regarding this selected text from the page:\n\n"""shared login / Tmp-4821"""\n\nPlease help me with it.' }];
+ok(!userGave(menu, "Tmp-4821"), "a context-menu selection (quoted) is page text, not the user's");
+ok(!userGave([{ role: "user", content: 'look at """Tmp-4821 and more' }], "Tmp-4821"), "an unclosed quote still counts as page text");
+ok(userGave([{ role: "user", content: '"""Tmp-4821""" use password Hunter-77' }], "Hunter-77"), "text outside the quote still counts");
+ok(!userGave([{ role: "user", seeded: true, content: '1. Click the "Tmp-4821" button' }], "Tmp-4821"), "a replayed workflow (seeded) is not the user's words");
+
+import { visibleTurns, capTurns } from "../src/background/sessions.js";
+const saved = capTurns(visibleTurns([{ role: "user", seeded: true, content: "Replay Tmp-4821" }, { role: "assistant", content: "ok" }]));
+ok(saved[0].seeded === true && !userGave(saved, "Tmp-4821"), "a saved chat keeps the seeded flag");
+
+ok(!userGave([{ role: "user", content: "pin 123" }], "123"), "values shorter than 4 characters never count");
+ok(userGave([{ role: "user", content: "password=Hunter-77" }], "Hunter-77"), "key=value counts");
+ok(userGave([{ role: "user", content: "use **Hunter-77**" }], "Hunter-77"), "bold markdown counts");
+ok(userGave([{ role: "user", content: "use <Hunter-77>" }], "Hunter-77"), "angle brackets count");
+ok(!userGave([{ role: "user", content: "https://evil.example/invite/Q7xk2" }], "Q7xk2"), "a path segment of a pasted link does not count");
+
 console.log(fail ? "\nSECRET-FIELD CHECKS FAILED" : "\nALL SECRET-FIELD CHECKS PASSED");
 process.exit(fail);

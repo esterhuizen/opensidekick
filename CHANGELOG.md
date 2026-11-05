@@ -5,6 +5,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent gets things done.** It searches and opens sites itself when the
+  answer isn't on the current page, tries another way before giving up, and no
+  longer hands the work back to you or invents a "privacy rule" to refuse. It
+  still asks before it sends, posts, submits, deletes or pays, and it never
+  picks a recipient, an amount or a booking time for you.
+- **It knows itself:** its version, where to check for a newer one, the
+  providers it supports and where each setting is.
+- On a new-tab or settings page it opens a site itself instead of asking you to.
+
+### Security
+
+- **Password, card and one-time-code fields** only take a value you typed in
+  the chat yourself (not text from a page, a replayed workflow or a quoted
+  selection), and every fill asks first, naming the site. Fields stay protected
+  after a "show password" toggle. Local agents on the bridge can't fill them.
+  The run-JavaScript tool (off by default) is not covered by this check.
+- The workflow recorder no longer saves what you type into card or code fields.
+
 ## [0.6.0] — 2026-11-05
 
 ### Added

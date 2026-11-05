@@ -58,7 +58,7 @@ export function visibleTurns(messages) {
     if (!m || typeof m !== "object") continue;
     if (m.role === "user") {
       if (typeof m.content === "string" && m.content && !m.images && !m.internal) {
-        out.push({ role: "user", content: m.content });
+        out.push(m.seeded ? { role: "user", content: m.content, seeded: true } : { role: "user", content: m.content });
       }
     } else if (m.role === "assistant") {
       let text = typeof m.content === "string" ? m.content.trim() : "";
@@ -86,7 +86,7 @@ export function capTurns(turns, { maxBytes = SESSION_MAX_BYTES, maxMessageChars 
   const exchanges = [];
   for (const t of turns) {
     const content = t.content.length > maxMessageChars ? cut(t.content, maxMessageChars) + TRIM_MARK : t.content;
-    const msg = { role: t.role, content };
+    const msg = t.seeded ? { role: t.role, content, seeded: true } : { role: t.role, content };
     if (t.role === "user") exchanges.push([msg]);
     else if (exchanges.length) exchanges[exchanges.length - 1].push(msg);
   }

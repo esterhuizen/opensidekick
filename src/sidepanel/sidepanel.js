@@ -1396,7 +1396,7 @@ function replayWorkflow(wf) {
   hideWorkflowsMenu();
   els.empty.hidden = true;
   addNote(`Replaying workflow “${wf.name}”`, "play");
-  send({ type: MSG.RUN_TASK, task: workflowPrompt(wf), newChat: newChatPending });
+  send({ type: MSG.RUN_TASK, task: workflowPrompt(wf), newChat: newChatPending, source: "workflow" });
   newChatPending = false;
   setRunning(true);
 }

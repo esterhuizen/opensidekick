@@ -153,7 +153,9 @@
     if (name) out.name = name.slice(0, 160);
     if (tag === "input" || tag === "textarea") {
       // A password or card number never leaves the page, only whether it's filled.
-      out.value = isSecretField(el) ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
+      const secretField = isSecretField(el);
+      if (secretField) out.secret = true;
+      out.value = secretField ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
       if (el.placeholder) out.placeholder = el.placeholder.slice(0, 80);
     }
     if (tag === "select") {
@@ -271,7 +273,7 @@
         return click(el);
       case "type":
         if (isSecretField(el) && msg.secretOk !== true) {
-          return { ok: false, error: "This is a password, card or one-time-code field. You may only type a value the user gave you in this chat. Ask the user to fill it in themselves." };
+          return { ok: false, error: "This is a password, card or one-time-code field. You may only type a value the user gave you in this chat. Ask the user to fill it in themselves. Don't try to fill this field any other way." };
         }
         return type(el, msg.text, msg.submit);
       case "select":
@@ -416,11 +418,28 @@
   }
 
   // Password, card and one-time-code fields: their value never leaves the
-  // page, and the agent may only type into them what the user gave it.
+  // page, and the agent may only type into them what the user gave it. A field
+  // stays secret once seen, so a "show password" toggle (type=password → text)
+  // doesn't turn it into a plain field.
+  const everSecret = new WeakSet();
+  const SECRET_HINT_RE = /pass(word|code)|pwd|\bpin\b|\botp\b|one.?time|verification code|security code|\bcvv\b|\bcvc\b|card.?number/i;
   function isSecretField(el) {
-    if (!el || el.tagName?.toLowerCase() !== "input") return false;
+    const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
+    if (tag !== "input" && tag !== "textarea") return false;
+    if (everSecret.has(el)) return true;
     const auto = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-    return el.type === "password" || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
+    let masked = false;
+    try {
+      const ts = getComputedStyle(el).getPropertyValue("-webkit-text-security");
+      masked = !!ts && ts !== "none";
+    } catch {
+      /* ignore */
+    }
+    const hint = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? el.labels[0].textContent : ""].join(" ");
+    const named = SECRET_HINT_RE.test(hint);
+    const secret = (tag === "input" && el.type === "password") || masked || named || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
+    if (secret) everSecret.add(el);
+    return secret;
   }
 
   function type(el, text, submit) {
@@ -454,7 +473,7 @@
         }
       }
     }
-    return { ok: true, typed: text.slice(0, 80), submitted: !!submit };
+    return { ok: true, typed: isSecretField(el) ? "(hidden)" : text.slice(0, 80), submitted: !!submit };
   }
 
   function select(el, value) {
@@ -533,8 +552,8 @@
     const el = e.target;
     const tag = el.tagName && el.tagName.toLowerCase();
     if (tag === "input" || tag === "textarea") {
-      if (el.type === "password") {
-        sendStep({ action: "type", description: `Enter the password into the ${fieldName(el)} field` });
+      if (isSecretField(el)) {
+        sendStep({ action: "type", description: `Fill in the ${fieldName(el)} field yourself (a secret value is not recorded)` });
         return;
       }
       const val = (el.value || "").slice(0, 80);

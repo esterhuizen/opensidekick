@@ -687,7 +687,8 @@ async function handleRunTask(msg) {
   await loadLive();
   if (msg.newChat) await resetLive();
   if (!session) session = { id: crypto.randomUUID(), sensitive: false };
-  conversation.push({ role: "user", content: msg.task });
+  // A replayed workflow's steps carry page-written labels: not the user's words.
+  conversation.push(msg.source === "workflow" ? { role: "user", content: msg.task, seeded: true } : { role: "user", content: msg.task });
   emit({ kind: "user_echo", text: msg.task });
   // Captured now: New chat mid-run must not redirect this run's save.
   const runSession = session;
