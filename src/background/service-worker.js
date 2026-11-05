@@ -44,7 +44,7 @@ import { ensureContentScript, groupTab } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
 import { openPanel, togglePanel, setPanelBehaviorOnActionClick, jsToolSupported } from "../common/browser.js";
-import { connectBridge } from "./external.js";
+import { connectBridge, isBridgeGroup } from "./external.js";
 
 // -------------------------------------------------------------------------
 // State
@@ -55,7 +55,7 @@ let liveLoad = null; // memoized restore of the live chat, once per worker life
 let currentRun = null; // { controller: AbortController, chat: boolean } (chat = started from the panel)
 let historyQueue = Promise.resolve(); // serializes every chat-history read-modify-write
 let storageFullWarned = false;
-const pendingPermissions = new Map(); // id -> resolve fn
+const pendingPermissions = new Map(); // id -> { resolve, external }
 const pendingPlans = new Map(); // id -> resolve fn
 // Random start: a card left open across a worker restart can't answer a new
 // prompt that would otherwise reuse its id.
@@ -333,7 +333,14 @@ async function runMigrations() {
 // this worker alive, so requests aren't dropped. A lost bridge is retried by alarm.
 const BRIDGE_ALARM = "osk:bridge-retry";
 let bridgePort = null;
-async function syncBridge() {
+let bridgeSync = null;
+// Single-flight: overlapping calls (startup, alarms, config and permission
+// events) must not start two hosts.
+function syncBridge() {
+  bridgeSync ??= syncBridgeOnce().finally(() => (bridgeSync = null));
+  return bridgeSync;
+}
+async function syncBridgeOnce() {
   const on =
     !!(await loadConfig()).settings.enableExternal &&
     typeof chrome.runtime.connectNative === "function" &&
@@ -344,6 +351,7 @@ async function syncBridge() {
         loadConfig,
         requestPermission,
         isBusy: () => !!currentRun,
+        activity: bridgeActivity,
         available: () => ({ cdpAvailable: cdpAvailable(), jsAvailable: jsToolSupported(chrome) }),
         detachAll,
         onClose: () => {
@@ -475,8 +483,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case MSG.STOP_TASK: {
       if (currentRun) currentRun.controller.abort();
       // Also cancel any pending permission or plan prompt.
-      for (const [, resolve] of pendingPermissions) resolve("decline");
-      pendingPermissions.clear();
+      // A local agent's card isn't part of the chat run: Stop leaves it be.
+      for (const [id, p] of pendingPermissions) {
+        if (p.external) continue;
+        pendingPermissions.delete(id);
+        p.resolve("decline");
+      }
       for (const [, resolve] of pendingPlans) resolve(false);
       pendingPlans.clear();
       // Always un-stick the panel: if the run is live its finally also emits idle
@@ -487,10 +499,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return false;
     }
     case MSG.PERMISSION_RESPONSE: {
-      const resolve = pendingPermissions.get(msg.id);
-      if (resolve) {
+      const pending = pendingPermissions.get(msg.id);
+      if (pending) {
         pendingPermissions.delete(msg.id);
-        resolve(msg.choice);
+        pending.resolve(msg.choice);
       } else if (!currentRun) {
         // The run was lost (e.g. the worker restarted before this answer landed).
         // Nothing to resolve — reset the panel instead of leaving it "Working".
@@ -691,7 +703,10 @@ async function handleRunTask(msg) {
     if (runSession === session) await writeHot();
   };
   const initialTab = await chrome.tabs.get(initialTabId).catch(() => null);
-  if (initialTab && Number.isInteger(initialTab.groupId) && initialTab.groupId !== -1) {
+  if (initialTab && isBridgeGroup(initialTab.groupId)) {
+    // A local agent's tab: the chat works there without joining or adopting the
+    // agent's group, so neither one reaches the other's tabs through it.
+  } else if (initialTab && Number.isInteger(initialTab.groupId) && initialTab.groupId !== -1) {
     if (runSession.groupId !== initialTab.groupId) {
       runSession.groupId = initialTab.groupId;
       if (runSession === session) await writeHot();
@@ -735,17 +750,39 @@ async function handleRunTask(msg) {
 // Ask the side panel to approve an action. Resolves to "once" | "always" | "decline".
 function requestPermission(details) {
   const id = ++permissionSeq;
+  const { timeoutMs, ...card } = details;
   return new Promise((resolve) => {
-    pendingPermissions.set(id, resolve);
+    pendingPermissions.set(id, { resolve, external: !!card.external });
+    // A card nobody answers in time is retired, so a late click can't approve
+    // something its caller already gave up on.
+    if (timeoutMs) {
+      setTimeout(() => {
+        if (!pendingPermissions.has(id)) return;
+        pendingPermissions.delete(id);
+        chrome.runtime.sendMessage({ type: MSG.PERMISSION_CANCEL, id }).catch(() => {});
+        resolve("timeout");
+      }, timeoutMs);
+    }
     chrome.runtime
-      .sendMessage({ type: MSG.PERMISSION_REQUEST, id, ...details })
+      .sendMessage({ type: MSG.PERMISSION_REQUEST, id, ...card })
       .catch(() => {
         // Side panel not reachable — fail safe by declining. A caller that
         // wants to tell this apart from the user's "no" names its own value.
         pendingPermissions.delete(id);
-        resolve(details.unreachable || "decline");
+        resolve(card.unreachable || "decline");
       });
   });
+}
+
+// One line in the panel for each local-agent call. Resolves false when no
+// panel took it: then nobody is watching, and the call doesn't run.
+async function bridgeActivity(entry) {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: MSG.BRIDGE_ACTIVITY, ...entry });
+    return res?.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 // -------------------------------------------------------------------------

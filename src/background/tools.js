@@ -308,6 +308,8 @@ export const TOOL_DEFS = [
 
 // ctx: { getTabId, setTabId }  — the agent owns the "focused" tab id and can
 // change it (open_tab / switch_tab), so tools read/write it through ctx.
+// Optional: ctx.expect (the label the caller saw: an element action is refused
+// if the ref now names something else) and ctx.newTab(url) (where a new tab opens).
 export async function executeTool(name, args, ctx) {
   switch (name) {
     case "read_page":
@@ -315,10 +317,10 @@ export async function executeTool(name, args, ctx) {
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "click", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "click", ref: args.ref });
     case "type_text":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT,
+        type: MSG.CS_ACT, expect: ctx.expect,
         action: "type",
         ref: args.ref,
         text: args.text,
@@ -326,25 +328,25 @@ export async function executeTool(name, args, ctx) {
       });
     case "select_option":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT,
+        type: MSG.CS_ACT, expect: ctx.expect,
         action: "select",
         ref: args.ref,
         value: args.value,
       });
     case "hover_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "hover", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "hover", ref: args.ref });
     case "double_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "dblclick", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "dblclick", ref: args.ref });
     case "right_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "contextmenu", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "contextmenu", ref: args.ref });
     case "drag_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "drag", ref: args.from_ref, toRef: args.to_ref });
     case "press_keys":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "keys", keys: args.keys, ref: args.ref });
     case "upload_file":
       if (String(args.content ?? "").length > UPLOAD_MAX) return { ok: false, error: `The file is too big (max ${UPLOAD_MAX / 1000} KB of text).` };
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT,
+        type: MSG.CS_ACT, expect: ctx.expect,
         action: "upload",
         ref: args.ref,
         name: args.name,
@@ -361,7 +363,7 @@ export async function executeTool(name, args, ctx) {
       return await readNetwork(await ctx.getTabId(), { urlPattern: args.url_pattern, limit: args.limit });
     case "scroll":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT,
+        type: MSG.CS_ACT, expect: ctx.expect,
         action: "scroll",
         direction: args.direction || "down",
         ref: args.ref,
@@ -412,10 +414,16 @@ export async function ensureContentScript(tabId) {
   }
 }
 
+const CS_TIMEOUT_MS = 30_000;
+
 async function csSend(tabId, msg) {
   await ensureContentScript(tabId);
   try {
-    const res = await chrome.tabs.sendMessage(tabId, msg);
+    // A page whose main thread hangs must not stall the caller forever.
+    const res = await Promise.race([
+      chrome.tabs.sendMessage(tabId, msg),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "The page didn't answer in time." }), CS_TIMEOUT_MS)),
+    ]);
     return res ?? { ok: false, error: "No response from page." };
   } catch (e) {
     return { ok: false, error: RESTRICTED_PAGE_HINT };
@@ -441,7 +449,7 @@ async function navigate(ctx, target) {
 async function openTab(ctx, url) {
   const full = normalizeTarget(url);
   if (!full) return { ok: false, error: "OpenSidekick opens tabs to http(s) addresses only." };
-  const tab = await chrome.tabs.create({ url: full, active: true });
+  const tab = ctx.newTab ? await ctx.newTab(full) : await chrome.tabs.create({ url: full, active: true });
   ctx.setTabId(tab.id);
   ctx.known?.add(tab.id);
   await ctx.groupTab?.(tab.id);

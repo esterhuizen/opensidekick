@@ -218,7 +218,7 @@ export const DEFAULT_SETTINGS = {
   // Expose console/network reading via Chrome's debugger (shows a banner).
   enableCdp: false,
   // Let local agents (Claude Code, Codex, …) use the browser tools through the
-  // native bridge. Every action they take still asks in the side panel.
+  // native bridge. Each connection, site and action is approved in the side panel.
   enableExternal: false,
   // Max output tokens per model call.
   maxTokens: 4096,
@@ -314,6 +314,8 @@ export const MSG = {
   // worker -> side panel
   AGENT_EVENT: "agent_event", // { kind, ... } streamed progress
   PERMISSION_REQUEST: "permission_request",
+  PERMISSION_CANCEL: "permission_cancel",
+  BRIDGE_ACTIVITY: "bridge_activity",
   PLAN_REQUEST: "plan_request",
   CONTINUE_REQUEST: "continue_request", // step limit reached: keep going?
   RECORDING_STEP: "recording_step", // { step } as the user records

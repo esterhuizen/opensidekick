@@ -116,7 +116,7 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Use it from your coding agent** — Claude Code, Codex, Cursor or any MCP
   client can drive your real browser (your logins, your cookies) through a small
   local bridge. Off by default; you approve each connection, each new site and
-  every risky action in the side panel, and it never sees your own tabs. See
+  risky actions in the side panel, and it never sees your own tabs. See
   [Connect a local agent](#connect-a-local-agent-claude-code-codex-cursor).
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
@@ -251,19 +251,23 @@ to agents running on your machine. Needs Node 18+ and a clone of this repo.
 Commands from outside are trusted less than your own chat:
 
 - **Pairing.** Each time an agent connects, the panel asks you to allow it.
-  The agent must also present a secret from the private folder, so other
-  users of the computer can't connect or pose as the bridge.
-- **Its own tabs only.** The agent starts with `open_tab` and works in its own
-  tab group. It can't read or switch to your tabs.
-- **Every new site asks**, reads included, and a sensitive site (banks,
-  payments) asks every time. *Allow once* covers that site for that connection
-  only; nothing is saved as "always allow". A site you decline stays declined,
-  and after three declines the connection gets no more cards.
-- **Risky actions always ask:** Buy/Pay/Delete-like clicks, file uploads and
-  JavaScript. The card shows the text, file or code.
-- **One call at a time**, on the tab you approved: if the page changed while
-  the card was open, the call doesn't run. Blocked sites stay blocked.
-- With the panel closed, nothing can be approved, so nothing runs.
+  The agent and the bridge also prove to each other that they hold a secret
+  from the private folder, so other users of the computer can't connect or
+  pose as the bridge.
+- **Its own tabs only.** The agent works in tabs it opens, in a window of its
+  own that doesn't take focus from you. It can't read or switch to your tabs
+  or a chat's tabs. JavaScript and the console/network readers aren't offered.
+- **Sites ask first.** The first read of a site asks (*Allow reading this
+  site*), and so does the first action on it (*Allow actions on this site*).
+  Those last until the agent disconnects; nothing is saved. Sensitive sites
+  (banks, payments) ask every time. A site you decline stays declined, and
+  after three declines the connection gets no more cards.
+- **Risky actions always ask:** Buy/Pay/Delete-like clicks, submitting a form
+  (submit or Enter) and file uploads. The card shows the whole text or file.
+- **You see every call.** Each one is logged in the side panel. With the panel
+  closed, nothing runs.
+- **One call at a time**, on the tab and element you approved: if the page or
+  the element changed meanwhile, the call doesn't run. Blocked sites stay blocked.
 
 Chrome only for now: the installer registers Google Chrome (on macOS/Linux, not
 Chromium, Brave or Edge).

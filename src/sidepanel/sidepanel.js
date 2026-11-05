@@ -115,9 +115,16 @@ async function init() {
   refreshContextHint();
   restorePendingWorkflow();
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === MSG.AGENT_EVENT) handleEvent(msg);
-    else if (msg.type === MSG.PERMISSION_REQUEST) showPermission(msg);
+    else if (msg.type === MSG.BRIDGE_ACTIVITY) {
+      // A local agent's call: logged here, and the "ok" tells the worker a panel is watching.
+      addNote(`${msg.client}: ${describeAction(msg.toolName, msg.args)}${msg.origin ? ` on ${msg.origin}` : ""}`, "dot");
+      sendResponse({ ok: true });
+    } else if (msg.type === MSG.PERMISSION_CANCEL) {
+      const card = els.messages.querySelector(`.perm-card[data-id="${Number(msg.id)}"] .perm-buttons`);
+      if (card) card.outerHTML = `<p class="muted-note">No answer in time, so it didn't run.</p>`;
+    } else if (msg.type === MSG.PERMISSION_REQUEST) showPermission(msg);
     else if (msg.type === MSG.PLAN_REQUEST) showPlan(msg);
     else if (msg.type === MSG.CONTINUE_REQUEST) showContinue(msg);
     else if (msg.type === MSG.RECORDING_STEP) {
@@ -935,7 +942,9 @@ function showPermission(req) {
   sealLog();
   const el = document.createElement("div");
   el.className = "perm-card" + (req.sensitive ? " sensitive" : "");
-  el.dataset.run = "1";
+  el.dataset.id = String(Number(req.id));
+  // A local agent's card isn't part of the chat run: the chat ending leaves it be.
+  if (!req.external) el.dataset.run = "1";
   const action = describeAction(req.toolName, req.args);
   // An MCP tool runs on a server, not on a page: no origin, and nothing here may
   // read as "trust this site" (a session grant for the server is all it gets).
@@ -954,7 +963,7 @@ function showPermission(req) {
         : "Allow action?";
   const who = escapeHtml(req.client || "A local agent");
   const intro = req.pairing
-    ? `<strong>${who}</strong>, a program on this computer, wants to use this browser through the OpenSidekick bridge. It works in its own tab group, and each site and action still asks here.`
+    ? `<strong>${who}</strong>, a program on this computer, wants to use this browser through the OpenSidekick bridge. It works only in tabs it opens. Reading a new site, acting on a page and risky actions ask here first.`
     : req.external
       ? `<strong>${who}</strong> (a program on this computer) wants to <strong>${escapeHtml(action)}</strong> on <span class="origin">${escapeHtml(req.origin)}</span>.`
       : req.mcp
@@ -963,15 +972,22 @@ function showPermission(req) {
       ? `You're in <strong>only-allowed-sites</strong> mode and <span class="origin">${escapeHtml(req.origin)}</span> isn't on your list. OpenSidekick wants to <strong>${escapeHtml(action)}</strong> here.`
       : `OpenSidekick wants to <strong>${escapeHtml(action)}</strong> on <span class="origin">${escapeHtml(req.origin)}</span>.`;
   const detail = permDetail(req);
-  const alsoLabel = req.mcp ? "Allow for this session" : req.newSite ? "Trust this site" : "Always allow this site";
+  const alsoLabel = req.external
+    ? req.grantLabel || ""
+    : req.mcp
+      ? "Allow for this session"
+      : req.newSite
+        ? "Trust this site"
+        : "Always allow this site";
+  const offerAlso = req.external ? !!req.grantLabel : !req.sensitive;
   el.innerHTML = `
-    <h3>${title}</h3>
+    <h3>${escapeHtml(title)}</h3>
     <p>${intro}</p>
     ${detail ? `<pre class="perm-detail">${escapeHtml(detail)}</pre>` : ""}
     ${req.why ? `<p class="muted-note">${escapeHtml(req.why)}.</p>` : ""}
     <div class="perm-buttons">
       <button class="primary" data-choice="once">${req.pairing ? "Connect" : "Allow once"}</button>
-      ${req.sensitive ? "" : `<button data-choice="always">${alsoLabel}</button>`}
+      ${offerAlso ? `<button data-choice="always">${escapeHtml(alsoLabel)}</button>` : ""}
       <button class="danger" data-choice="decline">Decline</button>
     </div>`;
   el.querySelectorAll("button").forEach((btn) =>
@@ -993,9 +1009,11 @@ function showPermission(req) {
 // What exactly will be sent or run, so nothing is approved blind.
 function permDetail(req) {
   const a = req.args || {};
+  // A local agent's payload is shown whole (the box scrolls): it is approved as seen.
   const clip = (v, n) => {
     const t = String(v ?? "");
-    return t.length > n ? t.slice(0, n) + "…" : t;
+    const max = req.external ? Infinity : n;
+    return t.length > max ? t.slice(0, max) + "…" : t;
   };
   const lines = [];
   if (req.label) lines.push(`Element: ${clip(req.label, 120)}`);

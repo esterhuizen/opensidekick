@@ -7,8 +7,10 @@
 //   - An agent starts it with --mcp: a stdio MCP server that forwards
 //     tools/list and tools/call to that pipe.
 // The pipe's address and a random token live in a folder only this OS user
-// can open (bridge.json, 0600); a client must present the token, so another
-// user can neither squat the pipe nor talk to it. No dependencies, Node 18+.
+// can open (bridge.json, 0600). Client and host prove to each other that they
+// hold the token (HMAC over fresh nonces; the token itself never crosses the
+// pipe), so another user can neither talk to the bridge nor pose as it.
+// No dependencies, Node 18+.
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +22,9 @@ export const STATE_DIR = WIN
   ? path.join(process.env.LOCALAPPDATA || os.homedir(), "OpenSidekick")
   : path.join(os.homedir(), ".opensidekick");
 const INFO = path.join(STATE_DIR, "bridge.json");
+export const PROTOCOL = 2; // must match BRIDGE_PROTOCOL in src/background/external.js
 const LINE_MAX = 2_000_000; // one request line from a client
+const REPLY_MAX = 64_000_000; // one reply line to a client (screenshots, images)
 const TO_CHROME_MAX = 1_000_000; // Chrome's cap on a host-to-extension message
 
 // The folder must be ours and closed to everyone else, or nothing in it can be trusted.
@@ -54,10 +58,53 @@ function writeInfo(info) {
   fs.renameSync(tmp, INFO);
 }
 
-export function tokenMatches(given, token) {
+export function proof(token, role, hostNonce, clientNonce) {
+  return crypto.createHmac("sha256", String(token)).update(`${role}|${hostNonce}|${clientNonce}`).digest("hex");
+}
+
+export function proofMatches(given, want) {
   const a = Buffer.from(String(given ?? ""));
-  const b = Buffer.from(String(token));
+  const b = Buffer.from(String(want));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Connect and run the handshake: the host sends a nonce, the client answers
+// with its own nonce and proof, the host's reply carries the host's proof.
+// Resolves { sock, reply } once the host's proof checks out.
+export function handshake(info, first, onLine) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(info.pipe);
+    let clientNonce = null;
+    let hostNonce = null;
+    let done = false;
+    const fail = (e) => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      reject(e);
+    };
+    sock.on("error", (e) => fail(e));
+    sock.on("close", () => fail(new Error("closed")));
+    lines(
+      sock,
+      (msg) => {
+        if (done) return onLine?.(msg);
+        if (hostNonce == null) {
+          if (msg.type !== "challenge" || typeof msg.nonce !== "string") return fail(new Error("not a bridge"));
+          hostNonce = msg.nonce;
+          clientNonce = crypto.randomBytes(16).toString("hex");
+          sock.write(JSON.stringify({ ...first, nonce: clientNonce, mac: proof(info.token, "client", hostNonce, clientNonce) }) + "\n");
+          return;
+        }
+        if (!proofMatches(msg.mac, proof(info.token, "host", hostNonce, clientNonce))) {
+          return fail(new Error(msg.error || "The bridge didn't prove itself."));
+        }
+        done = true;
+        resolve({ sock, reply: msg });
+      },
+      REPLY_MAX,
+    );
+  });
 }
 
 // Newline-delimited JSON; unparseable lines are skipped, an overlong one ends the stream.
@@ -86,24 +133,28 @@ export function lines(stream, onMessage, max = LINE_MAX) {
   });
 }
 
-function canConnect(pipe) {
-  return new Promise((resolve) => {
-    const s = net.connect(pipe);
-    const done = (v) => {
-      s.destroy();
-      resolve(v);
-    };
-    s.on("connect", () => done(true));
-    s.on("error", () => done(false));
-    setTimeout(() => done(false), 1000);
-  });
+// A live bridge that proves it holds the recorded token (not just anything listening there).
+async function liveBridge(info) {
+  let timer;
+  const attempt = handshake(info, { type: "probe" });
+  try {
+    return await Promise.race([
+      attempt.then(({ sock }) => (sock.destroy(), true)),
+      new Promise((r) => (timer = setTimeout(() => r(false), 1500))),
+    ]);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    attempt.then(({ sock }) => sock.destroy(), () => {});
+  }
 }
 
 async function hostMode() {
   ensureStateDir();
   // Another Chrome profile already serving keeps the pipe: don't take it over.
   try {
-    if (await canConnect(readInfo().pipe)) process.exit(0);
+    if (await liveBridge(readInfo())) process.exit(0);
   } catch {
     /* no live bridge */
   }
@@ -134,13 +185,15 @@ async function hostMode() {
       }
     }
   });
+  // Only our own files: a newer host may have taken over the folder.
   const cleanup = () => {
     try {
-      if (readInfo().token === token) fs.rmSync(INFO, { force: true });
+      if (readInfo().token !== token) return;
+      fs.rmSync(INFO, { force: true });
+      if (!WIN) fs.rmSync(pipe, { force: true });
     } catch {
       /* already gone */
     }
-    if (!WIN) fs.rmSync(pipe, { force: true });
   };
   process.stdin.on("end", () => {
     cleanup();
@@ -164,7 +217,8 @@ async function hostMode() {
   let conns = 0;
   const server = net.createServer((sock) => {
     const conn = ++conns;
-    let state = "new"; // new -> pairing -> open
+    const hostNonce = crypto.randomBytes(16).toString("hex");
+    let state = "new"; // new -> pairing -> open, or dead
     sock.on("error", () => {});
     sock.on("close", () => {
       if (state === "pairing" || state === "open") post({ type: "closed", conn });
@@ -175,21 +229,30 @@ async function hostMode() {
       state = "dead";
       if (!sock.destroyed && !sock.writableEnded) sock.end(JSON.stringify(obj) + "\n");
     };
+    send({ type: "challenge", nonce: hostNonce });
     lines(sock, async (req) => {
       if (state === "dead") return;
       if (state === "new") {
-        if (req.type !== "hello" || !tokenMatches(req.token, token)) return refuse({ id: req.id, error: "Not authorised." });
+        const nonce = typeof req.nonce === "string" ? req.nonce.slice(0, 64) : "";
+        if (!nonce || !proofMatches(req.mac, proof(token, "client", hostNonce, nonce))) return refuse({ error: "Not authorised." });
+        const mac = proof(token, "host", hostNonce, nonce);
+        if (req.type === "probe") return refuse({ ok: true, mac });
+        if (req.type !== "hello") return refuse({ error: "Not authorised." });
         state = "pairing";
-        const res = await toChrome({ type: "hello", conn, client: String(req.client || "").slice(0, 200) });
+        const res = await toChrome({ type: "hello", conn, protocol: PROTOCOL, client: String(req.client || "").slice(0, 200) });
         if (res.error) {
           post({ type: "closed", conn });
-          return refuse({ id: req.id, error: res.error });
+          return refuse({ error: res.error, mac });
         }
         state = "open";
-        return send({ id: req.id, ok: true });
+        return send({ ok: true, mac });
       }
       if (state !== "open") return send({ id: req.id, error: "Wait for the connection to be approved." });
-      const { id: _chromeId, ...res } = await toChrome({ ...(req.msg || {}), conn });
+      // Only these two kinds pass: a client can't pose as the host's own messages.
+      const m = req.msg || {};
+      if (m.type !== "list" && m.type !== "call") return send({ id: req.id, error: "Unknown request." });
+      const out = m.type === "list" ? { type: "list" } : { type: "call", name: String(m.name || ""), args: m.args && typeof m.args === "object" ? m.args : {} };
+      const { id: _chromeId, ...res } = await toChrome({ ...out, conn });
       send({ ...res, id: req.id });
     });
   });
@@ -230,22 +293,26 @@ function mcpMode() {
       const st = fs.lstatSync(info.pipe, { throwIfNoEntry: false });
       if (!st || !st.isSocket() || st.uid !== process.getuid()) throw unreachable();
     }
-    const s = net.connect(info.pipe);
-    s.on("error", () => fail(unreachable()));
-    s.on("close", () => sock === s && fail(new Error("OpenSidekick closed the connection.")));
-    lines(s, (res) => {
-      const p = pending.get(res.id);
-      if (!p) return;
-      pending.delete(res.id);
-      p.resolve(res);
-    });
-    sock = s;
-    // Pairing: the token proves this user; the card in the panel asks the user.
-    const res = await request(s, { type: "hello", token: info.token, client });
-    if (res.error) {
-      s.destroy();
-      throw new Error(res.error);
+    let hs;
+    try {
+      // Pairing: the proofs show both sides hold the token; the card in the panel asks the user.
+      hs = await handshake(info, { type: "hello", client }, (res) => {
+        const p = pending.get(res.id);
+        if (!p) return;
+        pending.delete(res.id);
+        p.resolve(res);
+      });
+    } catch (e) {
+      throw /ECONNREFUSED|ENOENT|closed|not a bridge/.test(String(e.message || e.code)) ? unreachable() : e;
     }
+    if (hs.reply.error) {
+      hs.sock.destroy();
+      throw new Error(hs.reply.error);
+    }
+    const s = hs.sock;
+    s.on("close", () => sock === s && fail(new Error("OpenSidekick closed the connection.")));
+    s.on("error", () => sock === s && fail(new Error("OpenSidekick closed the connection.")));
+    sock = s;
     return s;
   };
   let opening = null;

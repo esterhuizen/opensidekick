@@ -153,7 +153,8 @@
     if (name) out.name = name.slice(0, 160);
     if (tag === "input" || tag === "textarea") {
       // A password or card number never leaves the page, only whether it's filled.
-      const secret = el.type === "password" || /^cc-(number|csc)$/.test(el.getAttribute("autocomplete") || "");
+      const auto = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+      const secret = el.type === "password" || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
       out.value = secret ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
       if (el.placeholder) out.placeholder = el.placeholder.slice(0, 80);
     }
@@ -253,6 +254,11 @@
     }
     if (!document.contains(el)) {
       return { ok: false, error: `Element ${msg.ref} is no longer on the page. Re-read the page.` };
+    }
+    // The caller approved an action on the element it saw: refuse if this ref
+    // now names something else (another reader re-numbered the page, or it changed).
+    if (msg.expect != null && (describe(0, el).name || "") !== msg.expect) {
+      return { ok: false, error: `Element ${msg.ref} has changed since you read the page. Call read_page again.` };
     }
     try {
       el.scrollIntoView({ block: "center", inline: "center" });
