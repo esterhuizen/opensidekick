@@ -546,7 +546,10 @@ export async function runAgent(deps) {
         const currentOrigin = originOf(url);
 
         // (A0) After the tab or page changed under the agent, read before acting.
-        if (actsOnPage && needsRead && !(freshRun && call.name === "scroll")) {
+        // A new run only blocks calls that name an element ref: those refs (and
+        // the labels the buy/pay/delete check reads) may be from an earlier run.
+        const usesRef = !!call.args && ("ref" in call.args || "from_ref" in call.args || "to_ref" in call.args);
+        if (actsOnPage && needsRead && (!freshRun || usesRef)) {
           pushToolResult(conversation, call, {
             ok: false,
             error: freshRun ? "Call read_page before acting: refs from an earlier task may be out of date." : "You are on a different page now. Call read_page before acting on it.",
