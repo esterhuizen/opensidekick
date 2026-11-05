@@ -74,7 +74,7 @@ ok(!JSON.stringify(out).includes("Ctrl+Shift+E"), "no Ctrl+Shift+E anywhere in t
 eq(gecko.strict_min_version, "140.0", "gecko.strict_min_version is 140.0");
 eq(Object.keys(gecko), ["strict_min_version"], "gecko key set is exactly [strict_min_version]");
 
-const WANT_KEYS = ["manifest_version", "name", "short_name", "version", "description", "author", "homepage_url", "icons", "action", "background", "sidebar_action", "options_page", "content_scripts", "permissions", "host_permissions", "commands", "browser_specific_settings"];
+const WANT_KEYS = ["manifest_version", "name", "short_name", "version", "description", "author", "homepage_url", "icons", "action", "background", "sidebar_action", "options_page", "content_scripts", "permissions", "optional_permissions", "host_permissions", "commands", "browser_specific_settings"];
 eq(Object.keys(out), WANT_KEYS, "output key set is base minus minimum_chrome_version/side_panel plus sidebar_action/browser_specific_settings, in order");
 
 ok(JSON.stringify(base) === snapshot, "the transform does not mutate the base manifest.json");
