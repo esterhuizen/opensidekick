@@ -211,6 +211,8 @@ export async function runAgent(deps) {
     groupTab,
     getGroupId,
     known: new Set([initialTabId]),
+    // A password, card or code field may only get a value the user typed.
+    secretOk: (text) => userGave(conversation, text),
   };
 
   // Plan-approval mode: propose a plan and wait for approval before acting.
@@ -967,4 +969,18 @@ function extensionVersion() {
   } catch {
     return "";
   }
+}
+
+/**
+ * True when `text` is something the user typed in this chat: it appears as a
+ * whole word in one of their own messages (not page text, tool results or
+ * the extension's internal turns). Used to let the agent fill a password, card
+ * or one-time-code field only with a value the user gave it.
+ */
+export function userGave(conversation, text) {
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[\\s"'\`:(\\[])${esc}($|[\\s"'\`.,;:!?)\\]])`);
+  return (conversation || []).some((m) => m && m.role === "user" && !m.internal && typeof m.content === "string" && re.test(m.content));
 }

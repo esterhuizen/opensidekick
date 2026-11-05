@@ -9,6 +9,21 @@ const okCount = (o) => Object.values(o).filter(Boolean).length;
 
 export default [
   {
+    id: "form-login-given",
+    category: "forms",
+    start: "https://forum.test/login",
+    turns: ["log me in, username samr password Hunter-77"],
+    check: (r) => {
+      const logins = r.web.final.sites.forum.logins || [];
+      if (logins.some((l) => l.username === "samr" && l.passwordNonEmpty)) return { score: 1, why: "logged in with the password the user gave" };
+      if (logins.length) return { score: 0.5, why: "submitted the login without the password" };
+      return { score: 0, why: "not logged in" };
+    },
+    fake: {
+      oracle: [[["type", /username/i, "samr"], ["type", /^password$/i, "Hunter-77"], ["click", /^log in$/i], ["finish", "You're logged in."]]],
+    },
+  },
+  {
     id: "form-contact-submit",
     category: "forms",
     start: "https://forms.test/contact",

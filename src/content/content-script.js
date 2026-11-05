@@ -153,9 +153,7 @@
     if (name) out.name = name.slice(0, 160);
     if (tag === "input" || tag === "textarea") {
       // A password or card number never leaves the page, only whether it's filled.
-      const auto = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-      const secret = el.type === "password" || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
-      out.value = secret ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
+      out.value = isSecretField(el) ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
       if (el.placeholder) out.placeholder = el.placeholder.slice(0, 80);
     }
     if (tag === "select") {
@@ -272,6 +270,9 @@
       case "click":
         return click(el);
       case "type":
+        if (isSecretField(el) && msg.secretOk !== true) {
+          return { ok: false, error: "This is a password, card or one-time-code field. You may only type a value the user gave you in this chat. Ask the user to fill it in themselves." };
+        }
         return type(el, msg.text, msg.submit);
       case "select":
         return select(el, msg.value);
@@ -412,6 +413,14 @@
       el.dispatchEvent(new MouseEvent("click", opts));
     }
     return { ok: true, clicked: accessibleName(el).slice(0, 80) || el.tagName.toLowerCase() };
+  }
+
+  // Password, card and one-time-code fields: their value never leaves the
+  // page, and the agent may only type into them what the user gave it.
+  function isSecretField(el) {
+    if (!el || el.tagName?.toLowerCase() !== "input") return false;
+    const auto = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+    return el.type === "password" || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
   }
 
   function type(el, text, submit) {
