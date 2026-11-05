@@ -167,20 +167,23 @@ async function hostMode() {
     let state = "new"; // new -> pairing -> open
     sock.on("error", () => {});
     sock.on("close", () => {
-      if (state !== "new") post({ type: "closed", conn });
+      if (state === "pairing" || state === "open") post({ type: "closed", conn });
     });
-    const send = (obj) => !sock.destroyed && sock.write(JSON.stringify(obj) + "\n");
+    const send = (obj) => !sock.destroyed && !sock.writableEnded && sock.write(JSON.stringify(obj) + "\n");
+    // Refuse and hang up once the reply is flushed; later lines are ignored.
+    const refuse = (obj) => {
+      state = "dead";
+      if (!sock.destroyed && !sock.writableEnded) sock.end(JSON.stringify(obj) + "\n");
+    };
     lines(sock, async (req) => {
+      if (state === "dead") return;
       if (state === "new") {
-        if (req.type !== "hello" || !tokenMatches(req.token, token)) {
-          send({ id: req.id, error: "Not authorised." });
-          return sock.destroy();
-        }
+        if (req.type !== "hello" || !tokenMatches(req.token, token)) return refuse({ id: req.id, error: "Not authorised." });
         state = "pairing";
         const res = await toChrome({ type: "hello", conn, client: String(req.client || "").slice(0, 200) });
         if (res.error) {
-          send({ id: req.id, error: res.error });
-          return sock.destroy();
+          post({ type: "closed", conn });
+          return refuse({ id: req.id, error: res.error });
         }
         state = "open";
         return send({ id: req.id, ok: true });
