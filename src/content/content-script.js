@@ -259,7 +259,8 @@
     }
     // The caller approved an action on the element it saw: refuse if this ref
     // now names something else (another reader re-numbered the page, or it changed).
-    if (msg.expect != null && (describe(0, el).name || "") !== msg.expect) {
+    const now = msg.expect != null || msg.expectSubmits != null ? describe(0, el) : null;
+    if ((msg.expect != null && (now.name || "") !== msg.expect) || (msg.expectSubmits != null && !!now.submits !== msg.expectSubmits)) {
       return { ok: false, error: `Element ${msg.ref} has changed since you read the page. Call read_page again.` };
     }
     try {

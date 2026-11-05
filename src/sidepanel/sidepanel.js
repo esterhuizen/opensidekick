@@ -1041,7 +1041,9 @@ function permDetail(req) {
       break;
   }
   // Bidi and other invisible characters could disguise the text: show them.
-  return lines.join("\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, (c) => `<U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}>`);
+  return lines.join("\n").replace(/[\p{Cc}\p{Cf}]/gu, (c) =>
+    c === "\n" || c === "\t" ? c : `<U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}>`,
+  );
 }
 
 function describeAction(name, args) {

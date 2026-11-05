@@ -317,10 +317,10 @@ export async function executeTool(name, args, ctx) {
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "click", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "click", ref: args.ref });
     case "type_text":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
         action: "type",
         ref: args.ref,
         text: args.text,
@@ -328,25 +328,25 @@ export async function executeTool(name, args, ctx) {
       });
     case "select_option":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
         action: "select",
         ref: args.ref,
         value: args.value,
       });
     case "hover_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "hover", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "hover", ref: args.ref });
     case "double_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "dblclick", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "dblclick", ref: args.ref });
     case "right_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "contextmenu", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "contextmenu", ref: args.ref });
     case "drag_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "drag", ref: args.from_ref, toRef: args.to_ref });
     case "press_keys":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, action: "keys", keys: args.keys, ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "keys", keys: args.keys, ref: args.ref });
     case "upload_file":
       if (String(args.content ?? "").length > UPLOAD_MAX) return { ok: false, error: `The file is too big (max ${UPLOAD_MAX / 1000} KB of text).` };
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
         action: "upload",
         ref: args.ref,
         name: args.name,
@@ -363,7 +363,7 @@ export async function executeTool(name, args, ctx) {
       return await readNetwork(await ctx.getTabId(), { urlPattern: args.url_pattern, limit: args.limit });
     case "scroll":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
         action: "scroll",
         direction: args.direction || "down",
         ref: args.ref,
@@ -385,12 +385,21 @@ export async function executeTool(name, args, ctx) {
 
 // Show/update or hide the on-page activity overlay for a tab. Best-effort:
 // silently no-ops on restricted pages where the content script can't run.
+// Cosmetic, so it never waits long: a hung page must not hold up the caller.
 export async function setOverlay(tabId, state, label) {
+  let timer;
   try {
-    await ensureContentScript(tabId);
-    await chrome.tabs.sendMessage(tabId, { type: MSG.CS_OVERLAY, state, label });
+    await Promise.race([
+      (async () => {
+        await ensureContentScript(tabId);
+        await chrome.tabs.sendMessage(tabId, { type: MSG.CS_OVERLAY, state, label });
+      })(),
+      new Promise((r) => (timer = setTimeout(r, 3000))),
+    ]);
   } catch {
     /* restricted page or tab gone */
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -416,8 +425,10 @@ export async function ensureContentScript(tabId) {
 
 const CS_TIMEOUT_MS = 30_000;
 
-async function csSend(tabId, msg) {
+async function csSend(tabId, { guard, ...msg }) {
   await ensureContentScript(tabId);
+  // A caller that gave up meanwhile (its deadline passed) sends nothing late.
+  if (guard && !guard()) return { ok: false, error: "Cancelled: the call ran out of time." };
   try {
     // A page whose main thread hangs must not stall the caller forever.
     const res = await Promise.race([

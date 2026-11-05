@@ -34,7 +34,11 @@ export function detectInjection(text) {
 
 // Wider net for callers the user can't see (local agents): undoable-looking
 // labels that often aren't.
-const AGENT_RISKY_PATTERNS = [/\b(?:remove|move\s+to\s+trash|trash|terminate|archive|unsubscribe|revoke|reset|confirm|finish|submit|send|publish|post)\b/i];
+const AGENT_RISKY_PATTERNS = [
+  /\b(?:remove|move\s+to\s+trash|trash|terminate|archive|unsubscribe|revoke|reset|confirm|finish|submit|send|publish|post)\b/i,
+  // Consent and account changes (an OAuth "Allow" grants an app your account).
+  /\b(?:allow|accept|authori[sz]e|approve|agree|grant|continue|save|update|change\s+(?:password|email)|sign\s+in\s+with|log\s*in\s+with)\b/i,
+];
 
 /** isSensitiveActionText, plus labels risky enough to always ask a local agent. */
 export function isRiskyAgentAction(name) {

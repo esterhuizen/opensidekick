@@ -234,7 +234,8 @@ globalThis.chrome = {
     onUpdated: { addListener() {}, removeListener() {} },
     captureVisibleTab: async () => "data:image/png;base64,AA",
     sendMessage: async (id, msg) => {
-      ran.push([msg.type, msg.action || "", msg.expect]);
+      check(!("guard" in msg), "no function is ever posted to the page");
+      ran.push([msg.type, msg.action || "", msg.expect, msg.expectSubmits]);
       if (msg.type === "cs_ping") return { ok: true };
       if (msg.type === "cs_read_page") return { ok: true, url: tabs[id].url, ...page };
       if (msg.type === "cs_get_text") return { ok: true, url: tabs[id].landed || tabs[id].url, text: "hello" };
@@ -336,7 +337,7 @@ r = await gatedCall("read_page", {}, cfg, deps, s);
 check(r.ok && asked.length === n1, "a read on a site allowed for reading doesn't ask again");
 r = await gatedCall("click_element", { ref: 1 }, cfg, deps, s);
 check(r.ok && asked.length === n1 + 1 && asked.at(-1).grantLabel === "Allow actions on this site", "the first action on a site asks, even after reading was allowed");
-check(ran.some(([type, action, expect]) => action === "click" && expect === "Next"), "the action carries the label the agent saw, so a changed element is refused");
+check(ran.some(([type, action, expect, sub]) => action === "click" && expect === "Next" && sub === false), "the action carries the label and submit-ness the agent saw, so a changed element is refused");
 n1 = asked.length;
 r = await gatedCall("type_text", { ref: 3, text: "me@example.com" }, cfg, deps, s);
 check(r.ok && asked.length === n1, "after 'Allow actions', a plain action there doesn't ask");
@@ -353,6 +354,7 @@ check(asked.length === n1 + 5 && /submits a form/.test(asked.at(-1).reason), "a 
 r = await gatedCall("press_keys", { keys: ["Tab"] }, cfg, deps, s);
 check(asked.length === n1 + 6 && /keys/.test(asked.at(-1).reason), "any key press asks (shortcuts can delete or send)");
 check(riskReason("click_element", {}, "Remove item", false) && !riskReason("click_element", {}, "Next", false), "agent-only risky labels (Remove, …) ask; plain ones don't");
+check(["Allow", "Accept", "Authorize", "Approve", "Grant access", "Continue", "Save changes", "Change password"].every((l) => riskReason("click_element", {}, l, false)), "consent and account buttons ask every time");
 r = await gatedCall("upload_file", { ref: 1, name: "a.txt", content: "secret" }, cfg, deps, s);
 check(asked.at(-1).toolName === "upload_file" && asked.at(-1).args.content === "secret", "an upload asks every time and the card gets the content");
 r = await gatedCall("type_text", { ref: 3, text: "x".repeat(100_001) }, cfg, deps, s);

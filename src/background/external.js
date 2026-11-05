@@ -340,7 +340,11 @@ export async function gatedCall(callName, args, config, deps, s, live = () => tr
 
   const overlay = `${s.client} is using this tab`;
   const shot = name === "take_screenshot";
-  s.ctx.expect = REF_TOOLS.has(name) || t.args.ref != null ? label : undefined;
+  // Per call: what the agent saw (checked by the page before acting), and a
+  // guard so a call that ran out of time sends nothing once the page recovers.
+  const byRef = REF_TOOLS.has(name) || t.args.ref != null;
+  let timedOut = false;
+  const callCtx = { ...s.ctx, expect: byRef ? label : undefined, expectSubmits: byRef ? submits : undefined, guard: () => !timedOut };
   let result;
   let timer;
   try {
@@ -348,15 +352,26 @@ export async function gatedCall(callName, args, config, deps, s, live = () => tr
     result = await Promise.race([
       (async () => {
         if (s.tabId != null) await setOverlay(s.tabId, shot ? "hide" : "show", overlay);
-        return (await executeTool(name, t.args, s.ctx)) || { ok: false, error: "No result." };
+        const out = (await executeTool(name, t.args, callCtx)) || { ok: false, error: "No result." };
+        if (s.tabId != null && (shot || name === "open_tab" || name === "navigate")) await setOverlay(s.tabId, "show", overlay);
+        return out;
       })(),
-      new Promise((r) => (timer = setTimeout(() => r({ ok: false, error: "The page didn't finish in time. It may be stuck; try again or open another tab." }), RUN_TIMEOUT_MS))),
+      new Promise(
+        (r) =>
+          (timer = setTimeout(() => {
+            timedOut = true;
+            r({ ok: false, error: "The page didn't finish in time. It may be stuck; read it again before retrying." });
+          }, RUN_TIMEOUT_MS)),
+      ),
     ]);
   } finally {
     clearTimeout(timer);
-    s.ctx.expect = undefined;
   }
-  if (s.tabId != null && (shot || name === "open_tab" || name === "navigate")) await setOverlay(s.tabId, "show", overlay);
+  if (timedOut) {
+    s.lastElements = new Map(); // what it read may no longer hold
+    s.readOrigin = null;
+    return result;
+  }
 
   if (["navigate", "open_tab", "switch_tab"].includes(name)) {
     s.lastElements = new Map();
