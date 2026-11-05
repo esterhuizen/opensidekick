@@ -623,8 +623,20 @@ function wireSettings() {
     config.settings.enableJsTool = e.target.checked;
     persist();
   });
-  $("#enable-external").addEventListener("change", (e) => {
-    config.settings.enableExternal = e.target.checked;
+  // The bridge needs the optional nativeMessaging permission, asked for only
+  // here, so other users never see that install warning.
+  $("#enable-external").addEventListener("change", async (e) => {
+    const box = e.target;
+    if (box.checked) {
+      const granted = await chrome.permissions.request({ permissions: ["nativeMessaging"] }).catch(() => false);
+      if (!granted) {
+        box.checked = false;
+        return;
+      }
+    } else {
+      chrome.permissions.remove({ permissions: ["nativeMessaging"] }).catch(() => {});
+    }
+    config.settings.enableExternal = box.checked;
     persist();
   });
   $("#enable-cdp").addEventListener("change", (e) => {

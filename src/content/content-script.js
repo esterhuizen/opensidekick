@@ -83,8 +83,9 @@
     ].join(",");
 
     const nodes = document.querySelectorAll(selector);
+    if (query) return findResult(query, nodes);
     for (const el of nodes) {
-      if (!query && elements.length >= MAX_ELEMENTS) break;
+      if (elements.length >= MAX_ELEMENTS) break;
       // Never expose OpenSidekick's own on-page overlay to the model.
       if (el.closest("#opensidekick-overlay")) continue;
       if (!isVisible(el)) continue;
@@ -92,7 +93,6 @@
       refMap.set(ref, el);
       elements.push(describe(ref, el));
     }
-    if (query) return findResult(query, elements);
 
     return {
       ok: true,
@@ -107,22 +107,37 @@
     };
   }
 
-  function findResult(query, all) {
-    const words = String(query).toLowerCase().split(/W+/).filter((w) => w.length > 1);
-    const scored = all
-      .map((e) => {
-        const hay = [e.name, e.placeholder, e.href, e.role, e.tag, e.type].join(" ").toLowerCase();
-        return { e, score: words.filter((w) => hay.includes(w)).length };
-      })
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 20);
+  // Only the returned elements get refs: a ref the model never saw must not be
+  // clickable, or its label (and the Buy/Pay/Delete check) would be unknown.
+  const QUERY_SCAN_MAX = 3000;
+  const QUERY_RESULTS = 20;
+  function findResult(query, nodes) {
+    const words = [...new Set(String(query).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1))];
+    const scored = [];
+    let scanned = 0;
+    for (const el of nodes) {
+      if (scanned >= QUERY_SCAN_MAX) break;
+      if (el.closest("#opensidekick-overlay")) continue;
+      if (!isVisible(el)) continue;
+      scanned++;
+      const e = describe(0, el);
+      const hay = [e.name, e.placeholder, e.href, e.role, e.tag, e.type].join(" ").toLowerCase();
+      const score = words.filter((w) => hay.includes(w)).length;
+      if (score > 0) scored.push({ el, score, order: scanned });
+    }
+    scored.sort((x, y) => y.score - x.score || x.order - y.order);
+    const elements = scored.slice(0, QUERY_RESULTS).map(({ el }) => {
+      const ref = ++refCounter;
+      refMap.set(ref, el);
+      return describe(ref, el);
+    });
     return {
       ok: true,
       url: location.href,
       title: document.title,
-      elements: scored.map((x) => x.e),
-      note: scored.length ? undefined : "No element matched; call read_page without a query.",
+      summary: pageSummary(),
+      elements,
+      note: elements.length ? undefined : "No element matched; call read_page without a query.",
     };
   }
 
@@ -137,7 +152,9 @@
     const name = accessibleName(el, customCombobox ? comboboxText : undefined);
     if (name) out.name = name.slice(0, 160);
     if (tag === "input" || tag === "textarea") {
-      out.value = (el.value || "").slice(0, 120);
+      // A password or card number never leaves the page, only whether it's filled.
+      const secret = el.type === "password" || /^cc-(number|csc)$/.test(el.getAttribute("autocomplete") || "");
+      out.value = secret ? (el.value ? "(filled)" : "") : (el.value || "").slice(0, 120);
       if (el.placeholder) out.placeholder = el.placeholder.slice(0, 80);
     }
     if (tag === "select") {
@@ -323,6 +340,8 @@
   // Content comes from the model, never from the user's disk, so a page that
   // talks the agent into "uploading" can't reach local files this way.
   function upload(el, name, content, mime) {
+    // A styled upload button is often a <label for> over a hidden file input.
+    if (el instanceof HTMLLabelElement && el.control) el = el.control;
     if (!(el instanceof HTMLInputElement) || el.type !== "file") {
       return { ok: false, error: "That element is not a file input." };
     }

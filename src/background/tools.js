@@ -12,6 +12,8 @@ export const RESTRICTED_PAGE_HINT =
   "pages, the browser's own extensions or add-ons store, or a PDF), or it " +
   "navigated away.";
 
+const UPLOAD_MAX = 500_000;
+
 export const TOOL_DEFS = [
   {
     name: "read_page",
@@ -340,6 +342,7 @@ export async function executeTool(name, args, ctx) {
     case "press_keys":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, action: "keys", keys: args.keys, ref: args.ref });
     case "upload_file":
+      if (String(args.content ?? "").length > UPLOAD_MAX) return { ok: false, error: `The file is too big (max ${UPLOAD_MAX / 1000} KB of text).` };
       return await csSend(await ctx.getTabId(), {
         type: MSG.CS_ACT,
         action: "upload",
@@ -440,6 +443,7 @@ async function openTab(ctx, url) {
   if (!full) return { ok: false, error: "OpenSidekick opens tabs to http(s) addresses only." };
   const tab = await chrome.tabs.create({ url: full, active: true });
   ctx.setTabId(tab.id);
+  ctx.known?.add(tab.id);
   await ctx.groupTab?.(tab.id);
   await waitForLoad(tab.id);
   const updated = await chrome.tabs.get(tab.id);
@@ -449,7 +453,17 @@ async function openTab(ctx, url) {
 // Put a tab in the chat's tab group, or a new "OpenSidekick" one when the old
 // group is gone (closed or ungrouped by the user). Returns the group id, or
 // null on failure: grouping is cosmetic and must never fail a run.
-export async function groupTab(tabId, groupId) {
+export async function groupTab(tabId, groupId, title = "OpenSidekick") {
+  if (typeof chrome.tabs.group !== "function") return null; // no tab groups (Firefox before 139)
+  // Grouping into a group in another window would drag the tab across windows.
+  if (groupId != null) {
+    try {
+      const [tab, group] = await Promise.all([chrome.tabs.get(tabId), chrome.tabGroups.get(groupId)]);
+      if (tab.windowId !== group.windowId) groupId = null;
+    } catch {
+      groupId = null; // tab or group gone
+    }
+  }
   if (groupId != null) {
     try {
       return await chrome.tabs.group({ tabIds: [tabId], groupId });
@@ -459,7 +473,7 @@ export async function groupTab(tabId, groupId) {
   }
   try {
     const id = await chrome.tabs.group({ tabIds: [tabId] });
-    await chrome.tabGroups.update(id, { title: "OpenSidekick" }).catch(() => {});
+    await chrome.tabGroups.update(id, { title }).catch(() => {});
     return id;
   } catch {
     return null;
@@ -471,7 +485,6 @@ async function switchTab(ctx, tabId) {
     const tab = await chrome.tabs.get(tabId);
     await chrome.tabs.update(tabId, { active: true });
     ctx.setTabId(tabId);
-    await ctx.groupTab?.(tabId); // already in the group; this shows the panel there
     return { ok: true, tab_id: tabId, url: tab.url, title: tab.title };
   } catch {
     return { ok: false, error: `No tab with id ${tabId}.` };
@@ -530,9 +543,21 @@ async function screenshot(ctx) {
     return { ok: true, url: tab.url, image: direct, note: "Loaded the full-resolution image from this tab." };
   }
 
+  // captureVisibleTab grabs whatever tab is in front in that window, so it must
+  // be the agent's tab before and after the capture: else it could be the
+  // user's mail or bank tab.
+  const inFront = async () => {
+    const [front] = await chrome.tabs.query({ active: true, windowId: tab.windowId }).catch(() => []);
+    return front?.id === tabId;
+  };
+  const notInFront = {
+    ok: false,
+    error: "The tab isn't in front in its window, so it can't be captured. Call switch_tab with its tab_id first.",
+  };
   try {
-    // captureVisibleTab grabs the active tab of the window as a PNG data URL.
+    if (!(await inFront())) return notInFront;
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    if (!(await inFront())) return notInFront;
     const data = dataUrl.split(",")[1];
     return { ok: true, url: tab.url, image: { mediaType: "image/png", data }, note: "Screenshot captured." };
   } catch (e) {
@@ -576,14 +601,16 @@ async function fetchDirectImage(url) {
 
 // The agent sees only its own tab group and the tab it's on, like Claude in
 // Chrome: the user's other tabs (mail, bank, …) stay out of reach.
-export function inReach(tab, groupId, focusedTabId) {
-  return tab.id === focusedTabId || (groupId != null && tab.groupId === groupId);
+// `known` holds the tabs the run started on or opened itself, so reach still
+// works where tab groups don't (Firefox before 139, a failed group call).
+export function inReach(tab, groupId, focusedTabId, known) {
+  return tab.id === focusedTabId || !!known?.has(tab.id) || (groupId != null && groupId !== -1 && tab.groupId === groupId);
 }
 
 async function listTabs(ctx) {
   const focused = await ctx.getTabId();
   const groupId = ctx.getGroupId?.();
-  const tabs = (await chrome.tabs.query({})).filter((t) => inReach(t, groupId, focused));
+  const tabs = (await chrome.tabs.query({})).filter((t) => inReach(t, groupId, focused, ctx.known));
   return {
     ok: true,
     tabs: tabs.map((t) => ({ tab_id: t.id, title: t.title, url: t.url, active: t.active })),

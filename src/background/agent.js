@@ -72,7 +72,7 @@ function identityNotes(config, provider) {
 // text-only reply "mid-task" (navigation, hovering and reads don't).
 const ACT_TOOLS = new Set([
   "click_element", "type_text", "select_option", "double_click", "right_click",
-  "drag_element", "press_keys", "run_javascript",
+  "drag_element", "press_keys", "upload_file", "run_javascript",
 ]);
 
 // Tools that can send text out of the page (form fields, scripts).
@@ -195,6 +195,7 @@ export async function runAgent(deps) {
     },
     groupTab,
     getGroupId,
+    known: new Set([initialTabId]),
   };
 
   // Plan-approval mode: propose a plan and wait for approval before acting.
@@ -498,7 +499,7 @@ export async function runAgent(deps) {
           } catch {
             /* refused below: no tab, no switch */
           }
-          if (tab && !inReach(tab, getGroupId?.(), focusedTabId)) tab = null; // outside the agent's group
+          if (tab && !inReach(tab, getGroupId?.(), focusedTabId, ctx.known)) tab = null; // outside the agent's group
           if (!tab) {
             pushToolResult(conversation, call, { ok: false, error: `No tab with id ${call.args?.tab_id} in your tab group.` });
             emit({ kind: "tool_end", name: call.name, ok: false, summary: "no such tab" });
@@ -634,6 +635,7 @@ export async function runAgent(deps) {
             origin,
             toolName: call.name,
             args: runArgs,
+            label: runArgs && ("ref" in runArgs || "from_ref" in runArgs) ? actionLabel(call, lastElements) : "",
             sensitive: !!verdict.sensitive,
             newSite: !!verdict.newSite,
             why: verdict.why || "",

@@ -113,6 +113,14 @@ Smart checks disabled.
   off, chat history locally.
 - **`sidePanel`**: to show the assistant UI.
 - **`contextMenus` / `notifications`**: right-click actions and status.
+- **`tabGroups`**: to keep the tabs a chat works in together in one group, so
+  the agent reaches only those tabs and the one you are on.
+- **`nativeMessaging` (optional, off by default)**: asked for only when you
+  turn on Settings → "Let local agents use this browser". It lets the extension
+  talk to the bridge program you installed on your own computer, so local
+  agents (Claude Code, Codex, Cursor) can use the browser tools after you
+  approve them. Page content those agents read goes to that agent on your
+  computer, and from there to whatever model it uses.
 
 ## Your control
 

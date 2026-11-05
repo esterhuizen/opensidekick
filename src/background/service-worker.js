@@ -39,11 +39,11 @@ import {
 } from "./sessions.js";
 import { resolveSource, isNoteworthyChange, featureEnabled, thresholdFor } from "./decisions.js";
 import { runAgent } from "./agent.js";
-import { detachAll } from "./cdp.js";
+import { detachAll, cdpAvailable } from "./cdp.js";
 import { ensureContentScript, groupTab } from "./tools.js";
 import { normalizeTarget } from "./permissions.js";
 import { applyMigrations } from "./migrations.js";
-import { openPanel, togglePanel, setPanelBehaviorOnActionClick } from "../common/browser.js";
+import { openPanel, togglePanel, setPanelBehaviorOnActionClick, jsToolSupported } from "../common/browser.js";
 import { connectBridge } from "./external.js";
 
 // -------------------------------------------------------------------------
@@ -328,28 +328,47 @@ async function runMigrations() {
   if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: config });
 }
 
-// The native bridge for external agents: connected while the setting is on.
-// An open native port keeps this worker alive, so requests aren't dropped.
+// The native bridge for local agents: connected while the setting is on and
+// the optional nativeMessaging permission is granted. An open native port keeps
+// this worker alive, so requests aren't dropped. A lost bridge is retried by alarm.
+const BRIDGE_ALARM = "osk:bridge-retry";
 let bridgePort = null;
 async function syncBridge() {
-  const on = !!(await loadConfig()).settings.enableExternal;
+  const on =
+    !!(await loadConfig()).settings.enableExternal &&
+    typeof chrome.runtime.connectNative === "function" &&
+    (await chrome.permissions.contains({ permissions: ["nativeMessaging"] }).catch(() => false));
   if (on && !bridgePort) {
     try {
-      bridgePort = connectBridge({
+      const port = connectBridge({
         loadConfig,
         requestPermission,
         isBusy: () => !!currentRun,
-        activeTabId: getActiveContentTabId,
-        onClose: () => (bridgePort = null),
+        available: () => ({ cdpAvailable: cdpAvailable(), jsAvailable: jsToolSupported(chrome) }),
+        detachAll,
+        onClose: () => {
+          if (bridgePort === port) bridgePort = null;
+          chrome.alarms.create(BRIDGE_ALARM, { delayInMinutes: 5 });
+        },
       });
+      bridgePort = port;
     } catch {
       bridgePort = null; // bridge not installed: native/install.mjs
     }
   } else if (!on && bridgePort) {
-    bridgePort.disconnect();
+    const port = bridgePort;
     bridgePort = null;
+    port.disconnect();
   }
+  if (!on) chrome.alarms.clear(BRIDGE_ALARM).catch(() => {});
 }
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === BRIDGE_ALARM) syncBridge();
+});
+chrome.permissions.onAdded?.addListener(() => syncBridge());
+chrome.permissions.onRemoved?.addListener(() => syncBridge());
+// A worker woken by any event reconnects; a connected one stays awake.
+syncBridge();
 
 // Re-register scheduled-task alarms whenever the config changes.
 const SCHED_PREFIX = "osk:sched:";

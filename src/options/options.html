@@ -188,10 +188,10 @@
 
           <div class="field">
             <label class="radio"><input type="checkbox" id="enable-external" /> Let local agents use this browser <span class="chip warn">bridge</span></label>
-            <p class="hint">Claude Code, Codex, Cursor and other MCP clients can read and act on pages. Every action asks in the side panel.</p>
+            <p class="hint">Claude Code, Codex, Cursor and other MCP clients can open their own tabs and work in them. You approve each connection, each new site, and every risky action in the side panel.</p>
             <details class="more">
               <summary>Learn more</summary>
-              <p class="hint">Needs the bridge installed once: <code>node native/install.mjs &lt;extension id&gt;</code>, then add it to your agent, e.g. <code>claude mcp add opensidekick -- node native/opensidekick-bridge.mjs --mcp</code>. Only programs running as your user can connect. Keep the side panel open: with it closed, actions are declined.</p>
+              <p class="hint">Google Chrome only for now. Install the bridge once from a copy of the OpenSidekick repo: <code>node native/install.mjs &lt;extension id&gt;</code>. It prints the line to add to your agent, e.g. <code>claude mcp add opensidekick -- node ~/.opensidekick/opensidekick-bridge.mjs --mcp</code>. The agent never sees your own tabs, only the ones it opens. Turning this on asks Chrome for permission to talk to the bridge program. Keep the side panel open: with it closed, nothing can be approved, so nothing runs.</p>
             </details>
           </div>
 

@@ -115,7 +115,8 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   the browser — extending it well beyond the page.
 - **Use it from your coding agent** — Claude Code, Codex, Cursor or any MCP
   client can drive your real browser (your logins, your cookies) through a small
-  local bridge. Off by default; every action asks in the side panel. See
+  local bridge. Off by default; you approve each connection, each new site and
+  every risky action in the side panel, and it never sees your own tabs. See
   [Connect a local agent](#connect-a-local-agent-claude-code-codex-cursor).
 - **Context menu**: right-click a selection to ask about it, or summarize a page.
 - **Streaming responses** and a live view of every action the agent takes.
@@ -234,20 +235,35 @@ to agents running on your machine. Needs Node 18+ and a clone of this repo.
    ```bash
    node native/install.mjs <extension-id>
    ```
+   This copies the bridge into a private folder (`~/.opensidekick`, or
+   `%LOCALAPPDATA%\OpenSidekick` on Windows), so updating your clone doesn't
+   change what Chrome runs. Run it again to update; `--uninstall` removes it.
 2. In OpenSidekick Settings, turn on **Let local agents use this browser**.
-3. Add the MCP server to your agent, e.g. for Claude Code:
+   Chrome asks once for permission to talk to the bridge program.
+3. Add the MCP server to your agent. The installer prints the exact line; for
+   Claude Code it is:
    ```bash
-   claude mcp add opensidekick -- node /path/to/opensidekick/native/opensidekick-bridge.mjs --mcp
+   claude mcp add opensidekick -- node ~/.opensidekick/opensidekick-bridge.mjs --mcp
    ```
-   Other clients take the same command (`node …/opensidekick-bridge.mjs --mcp`) in their MCP config.
-4. Keep the side panel open (**Ctrl+E**): that's where you approve the agent's actions.
+   Other clients take the same command in their MCP config.
+4. Keep the side panel open (**Ctrl+E**): that's where you approve the agent.
 
-Commands from outside are trusted less than your own chat: every action asks
-(even in Auto mode and on always-allowed sites), *Allow once* lasts only for that
-agent's session, sensitive sites ask even to be read, and blocked sites stay
-blocked. Only programs running as your OS user can reach the bridge. The agent
-works in its own tab group; close the group to end its session. With the panel
-closed, actions fail with a clear error.
+Commands from outside are trusted less than your own chat:
+
+- **Pairing.** Each time an agent connects, the panel asks you to allow it.
+  The agent must also present a secret from the private folder, so other
+  users of the computer can't connect or pose as the bridge.
+- **Its own tabs only.** The agent starts with `open_tab` and works in its own
+  tab group. It can't read or switch to your tabs.
+- **Every new site asks**, reads included, and a sensitive site (banks,
+  payments) asks every time. *Allow once* covers that site for that connection
+  only; nothing is saved as "always allow". A site you decline stays declined,
+  and after three declines the connection gets no more cards.
+- **Risky actions always ask:** Buy/Pay/Delete-like clicks, file uploads and
+  JavaScript. The card shows the text, file or code.
+- **One call at a time**, on the tab you approved: if the page changed while
+  the card was open, the call doesn't run. Blocked sites stay blocked.
+- With the panel closed, nothing can be approved, so nothing runs.
 
 Chrome only for now: the installer registers Google Chrome (on macOS/Linux, not
 Chromium, Brave or Edge).

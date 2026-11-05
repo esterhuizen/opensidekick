@@ -1015,6 +1015,19 @@ body {
   color: var(--os-ink);
   box-shadow: var(--os-shadow-1);
 }
+.perm-card .perm-detail {
+  margin: 6px 0 8px;
+  padding: 6px 8px;
+  max-height: 10em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--os-fs-12);
+  border: 1px solid var(--os-line-2);
+  border-radius: var(--os-r-sm);
+  background: var(--os-sunken);
+}
 .perm-card.sensitive {
   border-color: var(--os-bad);
 }

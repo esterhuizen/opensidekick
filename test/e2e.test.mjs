@@ -241,15 +241,32 @@ function decide(messages) {
     if (n === 0) return { kind: "tool", name: "navigate", args: { url: `${BASE2}/` } };
     return { kind: "text", text: "nav_blocked=" + parsed.some((p) => /blocked/i.test(p.error || "")) };
   }
-  // Gate: switch_tab to a tab on a blocked site is refused.
+  // Gate: a tab the user opened outside the chat's group isn't listed, and
+  // switch_tab to it is refused (the test passes its real id in the task).
   if (/switch to the blocked tab/.test(firstUser)) {
     if (n === 0) return { kind: "tool", name: "list_tabs", args: {} };
     if (n === 1) {
-      const list = parsed.find((p) => Array.isArray(p.tabs));
-      const t = list && list.tabs.find((x) => String(x.url || "").startsWith(BASE2));
-      return { kind: "tool", name: "switch_tab", args: { tab_id: t ? t.id ?? t.tab_id : -1 } };
+      const id = Number((firstUser.match(/tab (\d+)/) || [])[1] ?? -1);
+      return { kind: "tool", name: "switch_tab", args: { tab_id: id } };
     }
-    return { kind: "text", text: "switch_blocked=" + parsed.some((p) => /blocked/i.test(p.error || "")) };
+    const list = parsed.find((p) => Array.isArray(p.tabs));
+    const listed = !!list && list.tabs.some((x) => String(x.url || "").startsWith(BASE2));
+    const refused = parsed.some((p) => /blocked|tab group/i.test(p.error || ""));
+    return { kind: "text", text: `switch_listed=${listed} switch_blocked=${refused}` };
+  }
+  // read_page with a query: only matching elements come back, and only they
+  // get refs, so a ref the model never saw can't be clicked.
+  if (/find the search box by query/.test(firstUser)) {
+    if (n === 0) return { kind: "tool", name: "read_page", args: { query: "search box" } };
+    const read = parsed.find((p) => Array.isArray(p.elements));
+    const els = read ? read.elements : [];
+    if (n === 1) return { kind: "tool", name: "click_element", args: { ref: els.length + 1 } };
+    const names = els.map((e) => e.name || e.placeholder || "");
+    const stray = parsed.find((p) => p.ok === false);
+    return {
+      kind: "text",
+      text: `q_hit=${names.some((x) => /search/i.test(x))} q_nobuy=${!names.some((x) => /buy/i.test(x))} q_count=${els.length} q_stray_refused=${!!stray}`,
+    };
   }
   // Gate (#8): open_tab to a site the user blocked.
   if (/open a tab to the blocked site/.test(firstUser)) {
@@ -1299,6 +1316,10 @@ async function main() {
     check(overlayShown, "overlay: activity indicator was shown while the agent worked");
     check(overlayGone, "overlay: indicator was removed when the task ended");
 
+    const q = answerOf((await drive("Please find the search box by query.")).events);
+    check(/q_hit=true/.test(q) && /q_nobuy=true/.test(q), `read_page query: matching elements only, multi-word query split (got "${q}")`);
+    check(/q_stray_refused=true/.test(q), `read_page query: a ref outside the returned elements can't be clicked (got "${q}")`);
+
     // --- (A) domain re-check: after navigating to a different origin without
     // re-reading, the next action is blocked. ---
     // open_tab honours a block rule on the site it opens, even in auto mode.
@@ -1313,9 +1334,11 @@ async function main() {
     check(/nav_blocked=true/.test(answerOf(navBlocked.events)), `gate: navigate to a blocked site is refused (got "${answerOf(navBlocked.events)}")`);
     const otherTab = await context.newPage();
     await otherTab.goto(`${BASE2}/`, { waitUntil: "load" });
-    const swBlocked = await drive("Please switch to the blocked tab.");
+    const otherId = await optPage.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => (t.url || "").startsWith(u))?.id ?? -1, BASE2);
+    const swBlocked = await drive(`Please switch to the blocked tab ${otherId}.`);
     await otherTab.close();
-    check(/switch_blocked=true/.test(answerOf(swBlocked.events)), `gate: switch_tab to a tab on a blocked site is refused (got "${answerOf(swBlocked.events)}")`);
+    check(/switch_listed=false/.test(answerOf(swBlocked.events)), `reach: list_tabs doesn't show a tab outside the chat's group (got "${answerOf(swBlocked.events)}")`);
+    check(/switch_blocked=true/.test(answerOf(swBlocked.events)), `gate: switch_tab to a tab outside the group, on a blocked site, is refused (got "${answerOf(swBlocked.events)}")`);
 
     // Leaving a bank page asks before going anywhere (the URL could carry data).
     await optPage.evaluate(([key, cfg]) => chrome.storage.local.set({ [key]: { ...cfg, sitePermissions: {} } }), [STORAGE_KEY, config]);

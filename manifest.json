@@ -52,7 +52,9 @@
     "contextMenus",
     "notifications",
     "alarms",
-    "debugger",
+    "debugger"
+  ],
+  "optional_permissions": [
     "nativeMessaging"
   ],
   "host_permissions": [

@@ -939,7 +939,11 @@ function showPermission(req) {
   const action = describeAction(req.toolName, req.args);
   // An MCP tool runs on a server, not on a page: no origin, and nothing here may
   // read as "trust this site" (a session grant for the server is all it gets).
-  const title = req.mcp
+  const title = req.pairing
+    ? "Connect a local agent?"
+    : req.external
+      ? `Allow ${req.client || "the local agent"}?`
+      : req.mcp
     ? "Allow MCP tool?"
     : req.sensitive
       ? req.why
@@ -948,18 +952,25 @@ function showPermission(req) {
       : req.newSite
         ? "New site — trust it?"
         : "Allow action?";
-  const intro = req.mcp
+  const who = escapeHtml(req.client || "A local agent");
+  const intro = req.pairing
+    ? `<strong>${who}</strong>, a program on this computer, wants to use this browser through the OpenSidekick bridge. It works in its own tab group, and each site and action still asks here.`
+    : req.external
+      ? `<strong>${who}</strong> (a program on this computer) wants to <strong>${escapeHtml(action)}</strong> on <span class="origin">${escapeHtml(req.origin)}</span>.`
+      : req.mcp
     ? `OpenSidekick wants to call the tool <strong>${escapeHtml(req.toolName || "")}</strong> on your MCP server <span class="origin">${escapeHtml(req.serverName || "")}</span>.`
     : req.newSite
       ? `You're in <strong>only-allowed-sites</strong> mode and <span class="origin">${escapeHtml(req.origin)}</span> isn't on your list. OpenSidekick wants to <strong>${escapeHtml(action)}</strong> here.`
       : `OpenSidekick wants to <strong>${escapeHtml(action)}</strong> on <span class="origin">${escapeHtml(req.origin)}</span>.`;
+  const detail = permDetail(req);
   const alsoLabel = req.mcp ? "Allow for this session" : req.newSite ? "Trust this site" : "Always allow this site";
   el.innerHTML = `
     <h3>${title}</h3>
     <p>${intro}</p>
+    ${detail ? `<pre class="perm-detail">${escapeHtml(detail)}</pre>` : ""}
     ${req.why ? `<p class="muted-note">${escapeHtml(req.why)}.</p>` : ""}
     <div class="perm-buttons">
-      <button class="primary" data-choice="once">Allow once</button>
+      <button class="primary" data-choice="once">${req.pairing ? "Connect" : "Allow once"}</button>
       ${req.sensitive ? "" : `<button data-choice="always">${alsoLabel}</button>`}
       <button class="danger" data-choice="decline">Decline</button>
     </div>`;
@@ -979,6 +990,36 @@ function showPermission(req) {
 // -------------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------------
+// What exactly will be sent or run, so nothing is approved blind.
+function permDetail(req) {
+  const a = req.args || {};
+  const clip = (v, n) => {
+    const t = String(v ?? "");
+    return t.length > n ? t.slice(0, n) + "…" : t;
+  };
+  const lines = [];
+  if (req.label) lines.push(`Element: ${clip(req.label, 120)}`);
+  switch (req.toolName) {
+    case "type_text":
+      lines.push(`Text: ${clip(a.text, 300)}`);
+      break;
+    case "upload_file":
+      lines.push(`File: ${clip(a.name, 80)} (${String(a.content ?? "").length.toLocaleString()} characters, ${clip(a.mime || "text/plain", 60)})`);
+      lines.push(clip(a.content, 300));
+      break;
+    case "run_javascript":
+      lines.push(clip(a.code, 500));
+      break;
+    case "press_keys":
+      lines.push(`Keys: ${clip(Array.isArray(a.keys) ? a.keys.join("+") : a.keys, 80)}`);
+      break;
+    case "select_option":
+      lines.push(`Option: ${clip(a.value, 120)}`);
+      break;
+  }
+  return lines.join("\n");
+}
+
 function describeAction(name, args) {
   switch (name) {
     case "click_element":
