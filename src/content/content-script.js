@@ -171,6 +171,13 @@
     if (tag === "a" && el.href) out.href = shortUrl(el.href);
     if (el.getAttribute("aria-checked")) out.checked = el.getAttribute("aria-checked");
     if (el.disabled) out.disabled = true;
+    // Pressing Enter or submitting from this field sends its form: name the
+    // form's submit button, so a "Place order" form still asks.
+    if (el.form && (tag === "input" || tag === "textarea" || tag === "select") && !/^(submit|image|button|reset)$/i.test(el.type || "")) {
+      const btn = el.form.querySelector('button[type="submit"],button:not([type]),input[type="submit"],input[type="image"]');
+      const fs = btn ? accessibleName(btn) : "";
+      if (fs) out.formSubmit = fs.slice(0, 80);
+    }
     // Clicking it submits a form, whatever its label says.
     if (el.form && ((tag === "button" && el.type === "submit") || (tag === "input" && (el.type === "submit" || el.type === "image")))) out.submits = true;
     return out;
@@ -425,12 +432,27 @@
   // stays secret once seen, so a "show password" toggle (type=password → text)
   // doesn't turn it into a plain field.
   const everSecret = new WeakSet();
-  // Names and short labels that mark a password, card or code field. Applied to
-  // single-line inputs only (not textareas, search, email or url fields), and
-  // free-text labels only when short and not a warning ("never share your
-  // password").
-  const SECRET_HINT_RE = /pass(word|wort|code)|\bpwd\b|\bpin\b(?!\s*code)|\botp\b|\botc\b|one.?time.?(pass)?(code|word)|verification code|security code|\bcvv2?\b|\bcvc2?\b|card.?number|cc.?num|\b(enter|user|device|sms|auth)(ication)? code\b|\d-digit code/i;
-  const HINT_WARNING_RE = /\b(never|don'?t|do not|forgot(ten)?|reset|search|drop|coupon|promo|voucher|discount|gift)\b/i;
+  // Names and short labels that mark a password, card or code field. Strong
+  // words (password, PIN, CVV, card number) always count; weak ones (codes,
+  // expiry) don't when the label is about a coupon, a reset or a search. A
+  // label that warns ("never share your password") only counts when it starts
+  // with the hint ("Verification code (don't share it)").
+  const STRONG_HINT_RE = /pass(word|wort|code)|passwd|\bpwd\b|kennwort|mot de passe|contrase(n|ñ)a|\bpin\b(?!\s*(code|name))|\bcvv2?\b|\bcvc2?\b|\bcsc\b|card.?number|cc.?num|security answer/i;
+  const WEAK_HINT_RE = /\botp\b|\botc\b|\b2fa\b|two.?factor|authenticator|(recovery|backup) code|one.?time.?(pass)?(code|word)|verification code|security code|\b(enter|user|device|sms|auth)(ication)? code\b|\d.?digit code|expir(y|ation)/i;
+  const CONTEXT_RE = /\b(forgot(ten)?|reset|search|drop|coupon|promo|voucher|discount|gift|referral)\b/i;
+  const NEGATION_RE = /\b(never|don'?t|do not)\b/i;
+  const hintIn = (t) => STRONG_HINT_RE.test(t) || (WEAK_HINT_RE.test(t) && !CONTEXT_RE.test(t));
+  // A label's own words, without links or buttons inside it ("Forgot password?").
+  function labelWords(label) {
+    if (!label) return "";
+    try {
+      const c = label.cloneNode(true);
+      for (const x of c.querySelectorAll("a,button,input,select,textarea")) x.remove();
+      return c.textContent || "";
+    } catch {
+      return label.textContent || "";
+    }
+  }
   function isSecretField(el) {
     const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
     if (tag !== "input" && tag !== "textarea") return false;
@@ -443,16 +465,21 @@
     } catch {
       /* ignore */
     }
-    // name/id on every field, split into words (user_pwd, loginPwd, txtPwd);
-    // free-text labels only on single-line inputs that aren't search, email or
-    // url, and only when short and not a warning ("never share your password").
-    const ident = [el.name, el.id].map((t) => String(t || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " ")).join(" ");
-    let named = SECRET_HINT_RE.test(ident);
+    // name/id on every field, raw and split into words (PassWord, user_pwd).
+    const ids = [el.name, el.id].map((t) => String(t || ""));
+    const split = ids.map((t) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " "));
+    let named = [...ids, ...split].some((t) => t && hintIn(t));
+    // Free-text labels on single-line inputs that aren't search, email or url.
     if (!named && tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
-      const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? el.labels[0].textContent : ""]
-        .map((t) => String(t || "").replace(/[\u2018\u2019]/g, "'").trim())
-        .filter((t) => t && t.length <= 60 && !HINT_WARNING_RE.test(t));
-      named = free.some((t) => SECRET_HINT_RE.test(t));
+      const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? labelWords(el.labels[0]) : ""]
+        .map((t) => String(t || "").replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ").trim())
+        .filter((t) => t && t.length <= 60);
+      named = free.some((t) => {
+        if (!hintIn(t)) return false;
+        if (!NEGATION_RE.test(t)) return true;
+        const lead = t.split(/[(:,–—-]/)[0];
+        return hintIn(lead);
+      });
     }
     const secret = (tag === "input" && el.type === "password") || masked || named || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
     if (secret) everSecret.add(el);

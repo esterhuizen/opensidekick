@@ -27,15 +27,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   approve the card. Fields are recognised by their type, autocomplete hint,
   masking and name, so an unusual custom field can still be missed. The
   run-JavaScript tool (off by default) is not covered by this check.
-- Workflows recorded on 0.6.0 or earlier leave out values that look like card
-  numbers, and values typed into fields named like card, CVV, PIN, code or
-  password, when they are replayed. They are still stored until you delete the
-  workflow.
-- **A follow-up message can't skip a confirmation.** Each new task in a chat
-  reads the page before it acts, so a Buy/Pay/Delete-like button seen in an
-  earlier task still gets its confirmation card. Before this, a follow-up
-  could click it without one.
-- The workflow recorder no longer saves what you type into card or code fields.
+- Workflows recorded on 0.6.0 or earlier leave out, when replayed, values that
+  look like card numbers and values typed into fields whose names look like a
+  card, CVV, PIN, password or verification code. Detection is by name, so a
+  field with an unusual name can still slip through, and the values stay
+  stored until you delete the workflow.
+- **Buy/Pay/Delete-like actions ask in more cases.** Each new task in a chat
+  reads the page again before it clicks, types or presses keys on an element,
+  so a button seen in an earlier task still gets its confirmation card (before,
+  a follow-up could click it without one). Pressing Enter or Space on such a
+  button, and typing with submit in a form whose button says "Place order" or
+  similar, now ask too.
+- The workflow recorder no longer saves what you type into fields it
+  recognises as card or code fields.
 
 ## [0.6.0] — 2026-11-05
 

@@ -14,7 +14,9 @@ const HTML = `<!doctype html><title>Log in</title><body><h1>Log in</h1>
 <label for="p">Password</label><input id="p" name="password" type="password">
 <label for="p2">Confirm password</label><input id="p2" name="password2" type="password">
 <label for="notes">Notes</label><input id="notes" name="notes">
-<button type="submit">Log in</button></form></body>`;
+<button type="submit">Log in</button></form>
+<div role="button" tabindex="0" id="cp" onkeydown="if(event.key==='Enter')window.__bought=(window.__bought||0)+1">Confirm purchase</div>
+<form id="co" onsubmit="event.preventDefault(); window.__bought=(window.__bought||0)+1;"><label for="gn">Gift note</label><input id="gn" name="note"><button type="submit">Place order</button></form></body>`;
 
 const browser = await chromium.launch({ args: ["--host-resolver-rules=MAP * ~NOTFOUND"] });
 const page = await browser.newPage();
@@ -99,6 +101,24 @@ for (const [mode, sp] of [["auto", {}], ["ask", { "https://forum.test": "allow" 
   await run(convo, cfg(mode, sp), [[["click_element", { ref: br }]], [["finish", { summary: "ok" }]]], () => "decline");
   console.log(`[buy follow-up ${mode}] run 2 clicks run-1 ref`); dump();
   check(`[buy follow-up ${mode}] run 2 can't click a run-1 ref: nothing bought`, (await bought()) === 0);
+}
+// (D) for keys and submit: Enter on a buy-like element, and submit:true in a
+// field whose form's button is buy-like, ask like a click on it would.
+for (const mode of ["auto", "ask"]) {
+  await reset();
+  await run([{ role: "user", content: "x" }], cfg(mode, { "https://forum.test": "allow" }), [
+    [["read_page", {}]],
+    () => [["press_keys", { ref: (lastRead.find((e) => e.name === "Confirm purchase") || {}).ref, keys: ["Enter"] }]],
+    [["finish", { summary: "ok" }]],
+  ], () => "decline");
+  check(`[keys ${mode}] Enter on "Confirm purchase" asks first; declined, nothing bought`, (await bought()) === 0 && log.some((e) => e.ev === "card" && e.sensitive && e.tool === "press_keys"));
+  await reset();
+  await run([{ role: "user", content: "x" }], cfg(mode, { "https://forum.test": "allow" }), [
+    [["read_page", {}]],
+    () => [["type_text", { ref: refOf("Gift note"), text: "hi", submit: true }]],
+    [["finish", { summary: "ok" }]],
+  ], () => "decline");
+  check(`[submit ${mode}] submit:true in a "Place order" form asks first; declined, nothing bought`, (await bought()) === 0 && log.some((e) => e.ev === "card" && e.sensitive && e.tool === "type_text"));
 }
 await browser.close();
 console.log(bad ? `\n${bad} PROBLEM(S)` : "\nALL AGENT-E2E PROBES OK");

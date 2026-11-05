@@ -56,8 +56,19 @@ ok(red('Type "1234" into the "Kartennummer" field'), "a German card field is dro
 for (const f of ['"Shipping address"', '"Postcode"', '"Zip code"', '"Promo code"', '"Passenger name"', '"Country code"', '"Your opinion"', '"Shopping list"']) {
   ok(!red(`Type "hello" into the ${f} field`), `${f} is kept`);
 }
+for (const f of ['"Passwd"', "pwd", '"Kennwort"', '"Mot de passe"', '"PassWord"', '"Security answer"', '"MM / YY"', '"Verification code"', '"SMS code"']) {
+  ok(red(`Type "hunter22" into the ${f} field`), `${f} is dropped`);
+}
 ok(!red('Type "1234567890123" into the "Order number" field'), "a 13-digit number that fails Luhn is kept");
 ok(!red('Click the "Buy" button'), "other steps are kept");
+
+// Tool arguments that parse to a non-object never reach the agent as one.
+import { safeParseArgs } from "../src/background/providers.js";
+for (const raw of ['"{}"', "true", "3", "null", "[1]"]) {
+  const v = safeParseArgs(raw);
+  ok(v && typeof v === "object" && !Array.isArray(v) && v._raw === raw, `safeParseArgs(${raw}) is a plain object`);
+}
+ok(safeParseArgs('{"ref":2}').ref === 2 && Object.keys(safeParseArgs("")).length === 0, "objects and empty input parse as before");
 
 console.log(fail ? "\nSECRET-FIELD CHECKS FAILED" : "\nALL SECRET-FIELD CHECKS PASSED");
 process.exit(fail);

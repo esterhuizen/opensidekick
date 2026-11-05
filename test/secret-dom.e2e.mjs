@@ -39,6 +39,13 @@ const CASES = [
   ["curly", `<input id="curly" aria-label="Message us (don’t share your password)">`, false],
   ["userlabel", `<label for="userlabel">Username <a href="#">Forgotten your password?</a></label><input id="userlabel" name="username">`, false],
   ["coupon", `<input id="coupon" placeholder="Coupon code">`, false],
+  ["PassWord", `<input id="PassWord" type="text">`, true],
+  ["resetcode", `<label for="resetcode">Password reset code</label><input id="resetcode">`, true],
+  ["giftpin", `<label for="giftpin">Gift card PIN</label><input id="giftpin">`, true],
+  ["vcode", `<label for="vcode">Verification code (don’t share it)</label><input id="vcode">`, true],
+  ["digit6", `<input id="digit6" placeholder="Enter 6 digit code">`, true],
+  ["giftcode", `<input id="giftcode" placeholder="Gift card code">`, false],
+  ["pinname", `<label for="pinname">Pin name</label><input id="pinname">`, false],
   ["toggle", `<label for="toggle">Your key</label><input id="toggle" type="password">`, true],
 ];
 

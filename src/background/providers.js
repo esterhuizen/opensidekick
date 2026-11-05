@@ -579,10 +579,12 @@ async function* sseStream(res) {
   }
 }
 
-function safeParseArgs(str) {
+export function safeParseArgs(str) {
   if (!str || !str.trim()) return {};
   try {
-    return JSON.parse(str);
+    const v = JSON.parse(str);
+    // Tools take an object; anything else ("{}" double-encoded, true, 3) is raw.
+    return v && typeof v === "object" && !Array.isArray(v) ? v : { _raw: str };
   } catch {
     return { _raw: str };
   }

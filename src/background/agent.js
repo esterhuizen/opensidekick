@@ -163,6 +163,7 @@ export async function runAgent(deps) {
   let sawSensitive = touchesSensitiveSite(conversation) || isSensitive(await tabUrl(initialTabId));
   const lastElements = new Map(); // ref -> accessible name, from the last read_page
   const lastSecret = new Set(); // refs of password, card and code fields in the last read_page
+  const lastFormSubmit = new Map(); // field ref -> its form's submit-button label, from the last read_page
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
   let nudges = 0; // CONTINUE_NUDGE reminders sent this run
@@ -548,7 +549,7 @@ export async function runAgent(deps) {
         // (A0) After the tab or page changed under the agent, read before acting.
         // A new run only blocks calls that name an element ref: those refs (and
         // the labels the buy/pay/delete check reads) may be from an earlier run.
-        const usesRef = !!call.args && ("ref" in call.args || "from_ref" in call.args || "to_ref" in call.args);
+        const usesRef = !!call.args && typeof call.args === "object" && ("ref" in call.args || "from_ref" in call.args || "to_ref" in call.args);
         if (actsOnPage && needsRead && (!freshRun || usesRef)) {
           pushToolResult(conversation, call, {
             ok: false,
@@ -577,6 +578,15 @@ export async function runAgent(deps) {
         if (!gateReads && (call.name === "click_element" || call.name === "double_click")) {
           if (isSensitiveActionText(lastElements.get(call.args?.ref))) forceSensitive = true;
         }
+        // Enter or Space on an element activates it, and Enter or submit:true in
+        // a field sends its form: judge the element's label and the form's
+        // submit button the same way.
+        if (!gateReads && call.name === "press_keys" && call.args && "ref" in call.args) {
+          const keys = Array.isArray(call.args.keys) ? call.args.keys.map((k) => String(k).toLowerCase()) : [];
+          const activates = keys.some((k) => k === "enter" || k === " " || k === "space" || k === "spacebar");
+          if (activates && (isSensitiveActionText(lastElements.get(call.args.ref)) || isSensitiveActionText(lastFormSubmit.get(call.args.ref)))) forceSensitive = true;
+        }
+        if (!gateReads && call.name === "type_text" && call.args?.submit && isSensitiveActionText(lastFormSubmit.get(call.args?.ref))) forceSensitive = true;
 
         let verdict = evaluate(call.name, url, config, sessionGrants);
         let promptUrl = url; // the site the card names
@@ -743,6 +753,7 @@ export async function runAgent(deps) {
         observedOrigin = null;
         lastElements.clear();
         lastSecret.clear();
+        lastFormSubmit.clear();
         freshRun = false;
         const landed = await tabUrl(focusedTabId);
         if (isSensitive(landed) || isSensitive(toolResult?.url || "")) sawSensitive = true;
@@ -758,9 +769,11 @@ export async function runAgent(deps) {
           freshRun = false;
           lastElements.clear();
           lastSecret.clear();
+          lastFormSubmit.clear();
           for (const el of toolResult.elements || []) {
             lastElements.set(el.ref, el.name || "");
             if (el.secret) lastSecret.add(el.ref);
+            if (el.formSubmit) lastFormSubmit.set(el.ref, el.formSubmit);
           }
         }
         // The user's selection rides on the first read of the page it came
