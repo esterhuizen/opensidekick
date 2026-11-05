@@ -19,6 +19,9 @@ ok(n.includes("blocked.example (the user's settings may stop you reading it)") &
 n = pageContextNote({ url: "chrome://settings", readable: false }, NOW);
 ok(/can't read/.test(n) && !n.includes("chrome://") && !n.includes("settings."), "browser page described, not named");
 ok(/can't read/.test(pageContextNote({ url: "", readable: false }, NOW)), "no tab is safe");
+ok(pageContextNote({ url: "https://e.com/", readable: true, version: "0.6.0" }, NOW).includes("OpenSidekick version 0.6.0"), "the note names the extension version");
+ok(!/version/.test(pageContextNote({ url: "https://e.com/", readable: true }, NOW)), "no version, no version line");
+ok(!/evil/.test(pageContextNote({ url: "https://e.com/", readable: true, version: "1.0 evil" }, NOW)), "a malformed version is dropped");
 ok(pageContextNote({ url: "https://xn--80ak6aa92e.com/", readable: true }, NOW).includes("xn--80ak6aa92e.com"), "IDN host stays punycode");
 ok(pageContextNote({ url: "https://a.com/x", readable: true }, NOW) === pageContextNote({ url: "https://a.com/y?z", readable: true }, NOW), "same note for any page on the host (stable prompt)");
 

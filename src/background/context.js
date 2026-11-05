@@ -46,13 +46,16 @@ function hostnameOf(url) {
  * page writes: only the hostname the task started on (letters, digits, dots
  * and hyphens), whether a selection is waiting, and today's date. Titles,
  * paths and selected text reach the model only inside gated page reads.
- * tab: { url, readable, hasSelection }.
+ * tab: { url, readable, hasSelection, version } — version is the extension's
+ * own manifest version.
  */
 export function pageContextNote(tab, now = new Date()) {
   const lines = [
     "",
     "",
     "Where you are: you run in a side panel next to the user's web browser, and you work on the tab they are looking at.",
+    ...versionLine(tab?.version),
+    "You can open and read public web pages yourself (navigate, open_tab), for example to look something up; you can't open browser settings, extension pages or other extensions.",
     'When the user says "this", "here", "this page", "the article" or similar, they mean the current tab unless they say otherwise.',
     "You can't see the page until you read it: call get_page_text or read_page. Never answer that you can't see the page or ask the user to paste it — read it.",
     "For a long task, keep going until it is done and then call finish; don't stop just to report progress.",
@@ -68,6 +71,11 @@ export function pageContextNote(tab, now = new Date()) {
   }
   lines.push(`Today is ${formatDate(now)}.`);
   return lines.join("\n");
+}
+
+function versionLine(version) {
+  const v = String(version || "");
+  return /^\d+(\.\d+){0,3}$/.test(v) ? [`You are OpenSidekick version ${v}, a browser extension. If the user asks which version they have, it is ${v}.`] : [];
 }
 
 function formatDate(now) {

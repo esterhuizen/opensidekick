@@ -160,6 +160,7 @@ export async function runAgent(deps) {
     url: startUrl,
     readable: !!startUrl && evaluate("get_page_text", startUrl, config, sessionGrants).decision === "allow",
     hasSelection: selectionPending,
+    version: extensionVersion(),
   });
 
   // Optional smart checks (Jev). `dsrc` is null unless the user switched them on
@@ -943,5 +944,13 @@ function summarizeResult(name, r) {
       return `waited ${r.waited_seconds}s`;
     default:
       return "done";
+  }
+}
+
+function extensionVersion() {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return "";
   }
 }
