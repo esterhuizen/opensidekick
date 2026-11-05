@@ -224,7 +224,7 @@ r = await handle({ type: "list", conn: 1 }, deps, sessions);
 check(/turned off/.test(r.error), "turning the setting off stops a paired connection too");
 cfg = config();
 
-const tools = externalTools(DEFAULT_SETTINGS).map((t) => t.name);
+const tools = externalTools({ ...DEFAULT_SETTINGS, enableVision: false }).map((t) => t.name);
 check(!tools.includes("finish") && !tools.includes("ask_user"), "finish and ask_user aren't offered");
 check(!tools.includes("take_screenshot") && !tools.includes("run_javascript"), "vision and JavaScript tools follow their settings");
 check(externalTools({ ...DEFAULT_SETTINGS, enableJsTool: true }, { jsAvailable: false }).every((t) => t.name !== "run_javascript"), "a tool the browser can't run isn't offered");
