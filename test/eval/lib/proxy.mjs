@@ -120,7 +120,11 @@ export async function startProxy({ fake = null, usageInject = true, verbose = fa
       entry.backoffMs += wait;
       if (verbose) console.log(`  proxy: ${routeName} ${up.status || "network error"}, retry in ${wait} ms`);
       await sleep(wait);
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) {
+        entry.status = 499; // the run gave up (timeout), not a provider failure
+        entry.ms = Date.now() - entry.t;
+        return;
+      }
     }
 
     entry.status = up.status;
@@ -139,7 +143,7 @@ export async function startProxy({ fake = null, usageInject = true, verbose = fa
       const errText = await drain(up.body);
       entry.errorSnippet = scrub(errText).slice(0, 300);
       entry.ms = Date.now() - entry.t;
-      res.end(errText);
+      res.end(scrub(errText)); // it lands in agent error events and chat history
       return;
     }
     const tee = sseUsage(route.type);

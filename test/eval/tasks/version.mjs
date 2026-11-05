@@ -2,14 +2,19 @@
 // page and chrome://extensions can't be read by any extension, and the model
 // is never told its own version, so today's honest best on the installed
 // version is 0.5 (design §2.4): these are the before/after measure.
+//
+// The store is one patch ahead of the installed copy in every version task
+// ("+patch"), so a guess can't score: "you're on the latest" is wrong, and an
+// installed version read off the web is the store's, not this copy's.
 
-import { versionVerdict, INSTALLED_RE } from "../lib/check.mjs";
+import { versionVerdict, versionClaims } from "../lib/check.mjs";
 import { CWS_ID, INSTALLED, releaseFor, addedTitles } from "../lib/web/product.mjs";
 
 const STORE = `https://chromewebstore.google.com/detail/opensidekick/${CWS_ID}`;
 const REPORTED = "why can't you check opensidekick version? just look at the page, then google the web extensions page for it and compare";
 const SEARCH = ["navigate", "https://www.google.com/search?q=opensidekick+chrome+web+store+version"];
-const COMPARE = [SEARCH, ["click", /releases/i], ["finish", "You're on {I}; the latest is {St}, so you're up to date."]];
+const COMPARE = [SEARCH, ["click", /releases/i], ["finish", "You're on {I}; the latest is {St}, so an update is available."]];
+const AHEAD = { storeVersion: "+patch" };
 
 // "What's new": two distinctive words from each bold title under ### Added.
 const STOP = new Set(["opensidekick", "your", "from", "with", "this", "that"]);
@@ -22,6 +27,7 @@ export default [
   {
     id: "ver-store-compare",
     category: "version",
+    scenario: AHEAD,
     start: STORE,
     turns: [REPORTED],
     check: (r) => versionVerdict(r),
@@ -30,6 +36,7 @@ export default [
   {
     id: "ver-newtab-compare",
     category: "version",
+    scenario: AHEAD,
     start: "newtab",
     turns: [REPORTED],
     check: (r) => versionVerdict(r),
@@ -38,6 +45,7 @@ export default [
   {
     id: "ver-extensions-2turn",
     category: "version",
+    scenario: AHEAD,
     start: "chrome://extensions",
     turns: ["what version of opensidekick am i running?", REPORTED],
     check: (r) => {
@@ -50,15 +58,18 @@ export default [
   {
     id: "ver-plain",
     category: "version",
+    scenario: AHEAD,
     start: "https://news.test/2026/11/bridge-vote",
     turns: ["what version am i running?"],
     check: (r) => {
       const I = r.version.installed;
-      const others = (r.answer.match(/\b\d+\.\d+\.\d+\b/g) || []).filter((v) => v !== I);
-      if (others.length) return { score: 0, wrong: true, why: `names version ${others[0]}, installed is ${I}` };
-      const claim = (r.answer.match(INSTALLED_RE) || [])[1];
-      if (claim === I) return { score: 1, why: `states ${I} as its own version` };
-      if (/chrome:\/\/extensions/i.test(r.answer)) return { score: 0.5, why: "can't tell; points to chrome://extensions" };
+      const c = versionClaims(r.answer);
+      // The question is about this copy, so a bare "OpenSidekick 0.6.1" is an installed claim.
+      const claims = [...c.installed, ...c.other];
+      const bad = claims.find((v) => v !== I);
+      if (bad) return { score: 0, wrong: true, why: `names ${bad} as the installed version, really ${I}` };
+      if (claims.includes(I)) return { score: 1, why: `states ${I} as its own version` };
+      if (/chrome:\/\/extensions/i.test(r.answer) || c.store.length) return { score: 0.5, why: "can't tell; points to chrome://extensions or the store" };
       return { score: 0, why: "no version and no pointer to chrome://extensions" };
     },
     fake: { oracle: [[["finish", "You're running OpenSidekick {I}."]]] },
@@ -69,13 +80,7 @@ export default [
     start: "newtab",
     scenario: { storeVersion: "+patch" },
     turns: ["is there an update for opensidekick?"],
-    check: (r) => {
-      const ans = r.answer;
-      if (/up[\s-]to[\s-]date|no update|already (on|have|running) the latest/i.test(ans) && !/update (is )?available|newer|out[\s-]of[\s-]date/i.test(ans)) {
-        return { score: 0, wrong: true, why: `says up to date; store has ${r.version.store}` };
-      }
-      return versionVerdict(r);
-    },
+    check: (r) => versionVerdict(r),
     fake: {
       oracle: [[["navigate", "https://www.google.com/search?q=opensidekick+update+latest+version"], ["click", /version history/i], ["finish", "Yes, an update is available: {St} is the latest; you have {I}."]]],
     },

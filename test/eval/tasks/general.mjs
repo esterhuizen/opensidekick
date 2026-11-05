@@ -10,8 +10,9 @@ export default [
     needsBrowsing: false,
     turns: ["whats the capital of australia"],
     check: (r) => {
+      if (/\bcanberra\b/i.test(r.answer)) return { score: 1, why: "Canberra" }; // "Canberra, not Sydney" is right
       if (/capital[^.]{0,30}(sydney|melbourne)/i.test(r.answer)) return { score: 0, wrong: true, why: "wrong capital" };
-      return /\bcanberra\b/i.test(r.answer) ? { score: 1, why: "Canberra" } : { score: 0, why: "no Canberra" };
+      return { score: 0, why: "no Canberra" };
     },
     fake: { oracle: [[["text", "The capital of Australia is Canberra."]]] },
   },
@@ -32,8 +33,9 @@ export default [
     turns: ["write me a 2 line poem about coffee"],
     check: (r) => {
       const lines = r.answer.split("\n").filter((l) => l.trim());
-      if (REFUSAL_RE.test(r.answer)) return { score: 0, why: "refusal language" };
+      // A poem may well say "I can't": refusal language only matters when there is no poem.
       if (lines.length >= 2 && /coffee|espresso|brew|mug|bean|latte/i.test(r.answer)) return { score: 1, why: "a short coffee poem" };
+      if (REFUSAL_RE.test(r.answer)) return { score: 0, why: "refusal language" };
       return { score: 0, why: "no two-line coffee poem" };
     },
     fake: { oracle: [[["text", "Dark roast at dawn, the kettle sings,\nmy mug of coffee warms the day's first things."]]] },

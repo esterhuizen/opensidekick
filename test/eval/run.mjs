@@ -23,7 +23,7 @@ import { createFake } from "./lib/fake-model.mjs";
 import { startWeb } from "./lib/web/server.mjs";
 import { makeCert } from "./lib/web/tls.mjs";
 import { ROOT, INSTALLED } from "./lib/web/product.mjs";
-import { hostRules } from "./lib/browser.mjs";
+import { hostRules, isApiHost } from "./lib/browser.mjs";
 import { runOne, score, live } from "./lib/runner.mjs";
 import { createReport, toRow, summarize, summaryMarkdown, compareText } from "./lib/report.mjs";
 import { scrub, scrubJson } from "./lib/scrub.mjs";
@@ -68,6 +68,13 @@ async function rescore(opts, stamp) {
   if (fs.existsSync(dir)) throw new Error(`results dir ${dir} already exists; pick another --stamp`);
   const report = createReport(dir);
   const rows = [];
+  // runs.jsonl written before a crash has no superseded flags: an attempt is
+  // superseded when a later attempt of the same run exists.
+  const lastAttempt = new Map();
+  for (const l of lines) {
+    const k = `${l.model}|${l.task}|${l.rep}`;
+    lastAttempt.set(k, Math.max(lastAttempt.get(k) || 0, l.attempt || 1));
+  }
   for (const old of lines) {
     const task = TASKS.find((t) => t.id === old.task);
     if (!task) {
@@ -76,7 +83,8 @@ async function rescore(opts, stamp) {
     }
     const record = JSON.parse(fs.readFileSync(path.join(src, old.transcript), "utf8"));
     const s = score(task, record, { infra: old.infra });
-    const row = { ...toRow({ stamp, model: { spec: old.model, type: old.providerType, model: old.modelId }, task, rep: old.rep, attempt: old.attempt, s, record }), superseded: old.superseded };
+    const superseded = old.superseded || (old.attempt || 1) < lastAttempt.get(`${old.model}|${old.task}|${old.rep}`);
+    const row = { ...toRow({ stamp, model: { spec: old.model, type: old.providerType, model: old.modelId }, task, rep: old.rep, attempt: old.attempt, s, record }), superseded };
     report.add(row, record, s);
     rows.push(row);
     if (row.score !== old.score) console.log(`  ${old.model} ${old.task} #${old.rep}: ${old.outcome} ${old.score} -> ${row.outcome} ${row.score} (${row.why})`);
@@ -194,12 +202,13 @@ async function main() {
     web = await startWeb({ tls });
     const fake = createFake();
     proxy = await startProxy({ fake, usageInject: opts.usageInject, verbose: opts.verbose });
-    const rules = hostRules({ httpPort: web.httpPort, httpsPort: web.httpsPort, real: !opts.dryRun });
+    const rules = hostRules({ httpPort: web.httpPort, httpsPort: web.httpsPort });
     const report = createReport(dir);
     const started = new Date();
     const total = plan.reduce((s, g) => s + g.tasks.length * (opts.dryRun ? 1 : opts.repeat), 0);
     const runs = [];
     const rows = [];
+    const apiHostHits = [];
     let n = 0;
     let chromium = "";
     console.log(`OpenSidekick eval ${stamp}: ${total} run(s)${opts.dryRun ? " (dry run, fake model, offline)" : ""}\n`);
@@ -215,6 +224,12 @@ async function main() {
               timeoutSec: opts.timeout, keepProfile: opts.keepProfiles, canaries, verbose: opts.verbose,
             });
             chromium ||= res.record.chromium;
+            // The host rules send model API hosts nowhere; one reaching the fake web is a harness bug.
+            const apiHits = (res.record.web.final.hits || []).filter((h) => isApiHost(h.host));
+            if (apiHits.length) {
+              apiHostHits.push(...apiHits.map((h) => h.host));
+              console.error(`  ERROR: the fake web saw model API host(s) ${[...new Set(apiHits.map((h) => h.host))].join(", ")}: check hostRules()`);
+            }
             const row = toRow({ stamp, model: g.model, task, rep, attempt, s: res, record: res.record });
             if (prev) prev.superseded = true;
             report.add(row, res.record, res);
@@ -252,7 +267,7 @@ async function main() {
       settings: { ...DEFAULT_SETTINGS, ...opts.set }, overrides: opts.set, hostRules: rules,
       tasks: [...new Set(plan.flatMap((g) => g.tasks.map((t) => t.id)))], tasksHash: tasksHash(),
       startedAt: started.toISOString(), endedAt: new Date().toISOString(),
-      usageUnavailable: proxy.usageUnavailable(), node: process.version, playwright: playwrightVersion(), chromium, git: sha + dirty,
+      usageUnavailable: proxy.usageUnavailable(), apiHostHits: [...new Set(apiHostHits)], node: process.version, playwright: playwrightVersion(), chromium, git: sha + dirty,
     }, null, 2));
     console.log("\n" + md);
     if (opts.compare) {
@@ -262,10 +277,10 @@ async function main() {
     console.log(`Results: ${dir}`);
 
     if (opts.dryRun) {
-      const failed = printSelftest(selftest({ runs, dir, canaries, upstreamCalls: proxy.upstreamCalls(), skipped, full: opts.tasks === "all" }));
+      const failed = printSelftest(selftest({ runs, dir, canaries, upstreamCalls: proxy.upstreamCalls(), apiHostHits, skipped, full: opts.tasks === "all" }));
       return failed ? 1 : 0;
     }
-    return 0;
+    return apiHostHits.length ? 1 : 0;
   } finally {
     await cleanup();
   }

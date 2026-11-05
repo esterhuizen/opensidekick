@@ -8,16 +8,23 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { STORAGE_KEY, MSG } from "../../../src/common/constants.js";
 import { ROOT } from "./web/product.mjs";
+import { SECRET_ENV_RE } from "./scrub.mjs";
 
-export const API_HOSTS = ["api.anthropic.com", "*.googleapis.com", "openrouter.ai"];
+export const API_HOSTS = ["api.anthropic.com", "*.googleapis.com", "openrouter.ai", "*.openrouter.ai"];
 
-// Every hostname goes to the fake web; real mode keeps the model API hosts
-// real (only Chromium's own background traffic could use them: the extension
-// talks to the proxy on 127.0.0.1).
-export function hostRules({ httpPort, httpsPort, real }) {
-  const rules = [`MAP *:80 127.0.0.1:${httpPort}`, `MAP *:443 127.0.0.1:${httpsPort}`, "EXCLUDE localhost", "EXCLUDE 127.0.0.1"];
-  if (real) for (const h of API_HOSTS) rules.push(`EXCLUDE ${h}`);
+// Every hostname on ports 80/443 goes to the fake web, any other port fails.
+// The model API hosts resolve nowhere in both modes: the extension talks to
+// the proxy on 127.0.0.1, so nothing in the browser needs them, and an agent
+// navigation (or Chromium's background traffic) can't reach the live web or
+// land on the fake one.
+export function hostRules({ httpPort, httpsPort }) {
+  const rules = [...API_HOSTS.map((h) => `MAP ${h} ~NOTFOUND`), `MAP *:80 127.0.0.1:${httpPort}`, `MAP *:443 127.0.0.1:${httpsPort}`, "MAP * ~NOTFOUND", "EXCLUDE localhost", "EXCLUDE 127.0.0.1"];
   return rules.join(", ");
+}
+
+// A hostname the API rules should have kept away from the fake web.
+export function isApiHost(host) {
+  return API_HOSTS.some((h) => (h.startsWith("*.") ? host.endsWith(h.slice(1)) || host === h.slice(2) : host === h));
 }
 
 export async function launch({ rules }) {
@@ -28,7 +35,7 @@ export async function launch({ rules }) {
       headless: false,
       ignoreHTTPSErrors: true,
       // The browser never needs a key: keep secret-looking variables out of its environment.
-      env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !/KEY|TOKEN|SECRET/i.test(k))),
+      env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !SECRET_ENV_RE.test(k))),
       args: [
         "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check",
         `--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`,
@@ -66,7 +73,8 @@ export async function openStart(ctx, start) {
 
 // The listener answering cards and checkpoints like a cooperative user.
 // rules: [{ tool?, labelRe?, originRe?, sensitive?, choice, guard? }] (regexes
-// as {source, flags}); the first match wins, else "once".
+// as {source, flags}); the first match wins, else "once". runner.cardRules
+// ends the list with the default decline for buy/pay/subscribe-style labels.
 export async function installController(ctx, extId, rules) {
   const controller = await ctx.newPage();
   await controller.goto(`chrome-extension://${extId}/src/options/options.html`, { waitUntil: "load" });

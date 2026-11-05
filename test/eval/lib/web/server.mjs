@@ -41,7 +41,7 @@ const ALIASES = {
 };
 
 // Chromium's own background traffic: kept in the hit log, never a navigation.
-const BACKGROUND_HOSTS = new Set(["clients2.google.com", "clients1.google.com", "accounts.google.com", "update.googleapis.com", "optimizationguide-pa.googleapis.com", "content-autofill.googleapis.com", "safebrowsingohttpgateway.googleapis.com", "redirector.gvt1.com"]);
+const BACKGROUND_HOSTS = new Set(["clients2.google.com", "clients1.google.com", "android.clients.google.com", "accounts.google.com", "update.googleapis.com", "optimizationguide-pa.googleapis.com", "content-autofill.googleapis.com", "safebrowsingohttpgateway.googleapis.com", "redirector.gvt1.com"]);
 const BACKGROUND_PATH = /^\/(async\/|complete\/search|favicon\.ico|gen_204|client_204)/;
 
 const HOST_INDEX = new Map();
@@ -62,7 +62,7 @@ export async function startWeb({ tls, today = new Date() }) {
   let state;
   const reset = (overrides = {}) => {
     const scenario = resolveScenario(overrides, today);
-    state = { scenario, turn: 0, sites: {}, search: { queries: [] }, nav: [], hits: [], unknownHosts: [] };
+    state = { scenario, turn: 0, sites: {}, search: { queries: [] }, nav: [], hits: [], unknownHosts: [], versionShown: [] };
     for (const s of SITES) state.sites[s.name] = { live: {}, ...(s.init ? s.init(scenario) : {}) };
     return scenario;
   };
@@ -96,6 +96,8 @@ export async function startWeb({ tls, today = new Date() }) {
     const body = await readBody(req);
     const site = HOST_INDEX.get(host);
     const send = (status, type, data, headers = {}) => {
+      // Pages that showed the store version: the evidence a version answer came from a lookup.
+      if (status === 200 && typeof data === "string" && data.includes(state.scenario.storeVersion)) state.versionShown.push({ t, turn: state.turn, host, path: url.pathname + url.search });
       res.writeHead(status, { "content-type": type, "cache-control": "no-store", ...headers });
       res.end(data);
     };

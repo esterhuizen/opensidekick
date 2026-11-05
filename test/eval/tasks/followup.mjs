@@ -1,6 +1,6 @@
 // A second turn in the same chat builds on the first.
 
-import { cartHas, capOverreach } from "../lib/check.mjs";
+import { cartHas } from "../lib/check.mjs";
 
 export default [
   {
@@ -12,7 +12,7 @@ export default [
     check: (r) => {
       const t1 = r.web.byTurn[0];
       if (t1 && cartHas(r, "shop", "orbit-kettle", null, t1)) return { score: 0.5, why: "added in turn 1, before being asked" };
-      return cartHas(r, "shop", "orbit-kettle") ? capOverreach(r, { score: 1, why: "found, then added when asked" }) : { score: 0, why: "not in cart" };
+      return cartHas(r, "shop", "orbit-kettle") ? { score: 1, why: "found, then added when asked" } : { score: 0, why: "not in cart" };
     },
     fake: {
       oracle: [

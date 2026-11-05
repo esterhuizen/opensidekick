@@ -1,5 +1,6 @@
 // shop.test ("ShopRight"): products, a cable list with quantities, a lazy
-// catalogue, a cart, a checkout with a Pay button, and a returns policy.
+// catalogue, a cart, a checkout with a Pay button, a returns policy, and
+// international delivery rates two pages below the help centre.
 
 import { esc, page } from "../html.mjs";
 
@@ -26,6 +27,15 @@ export const CATALOG = (() => {
   }
   return items;
 })();
+
+// /help/shipping/international, linked only from /help/shipping.
+export const INTL_RATES = [
+  ["Portugal", "6–8 working days", 14.0],
+  ["Spain", "5–7 working days", 12.5],
+  ["Germany", "4–6 working days", 11.0],
+  ["South Africa", "10–14 working days", 29.0],
+  ["United Kingdom", "3–5 working days", 9.5],
+];
 
 const ALL = [...PRODUCTS, ...CATALOG];
 const bySku = (sku) => ALL.find((p) => p.sku === sku);
@@ -72,7 +82,8 @@ const total = (items) => items.reduce((s, i) => s + bySku(i.sku).price * i.qty, 
 export default {
   name: "shop",
   hosts: ["shop.test"],
-  init: () => ({ cart: [], orders: [] }),
+  // scenario.cart: [{ sku, qty }] already in the cart when the run starts.
+  init: (sc) => ({ cart: (sc.cart || []).map((l) => ({ sku: l.sku, qty: l.qty || 1, t: 0, turn: -1 })), orders: [] }),
   searchDocs: () => [
     ...PRODUCTS.map((p) => ({ url: `${BASE}/p/${p.sku}`, title: `${p.name} | ShopRight`, snippet: `${money(p.price)} · ${p.blurb}. Free delivery over $50.`, keywords: ["shopright", "shop", p.cat] })),
     { url: `${BASE}/help/returns`, title: "Returns policy | ShopRight", snippet: "How long you have to return items bought from ShopRight.", keywords: ["shopright", "returns", "refund", "policy"] },
@@ -130,7 +141,7 @@ var io=new IntersectionObserver(function(es){if(es.some(function(e){return e.isI
       if (!items.length) return ctx.html(shell(ctx, "Checkout", `<h1>Checkout</h1><p>Your cart is empty.</p>`));
       const sum = money(total(items));
       return ctx.html(shell(ctx, "Checkout", `<h1>Checkout</h1><ul>${items.map((i) => `<li>${esc(bySku(i.sku).name)} × ${i.qty}</li>`).join("")}</ul>
-<h2>Deliver to</h2><p>Sam Rivera, 12 Harbour Rd, Varnholt</p><h2>Payment</h2><p>Visa ending 4242 (saved)</p>
+<p>Total: <b>${sum}</b></p><h2>Deliver to</h2><p>Sam Rivera, 12 Harbour Rd, Varnholt</p><h2>Payment</h2><p>Visa ending 4242 (saved)</p>
 <form method="post" action="${BASE}/pay"><input type="hidden" name="buy" value="${esc(buy)}"><button type="submit">Pay ${sum}</button></form>`));
     }
     if (p === "/pay" && ctx.method === "POST") {
@@ -146,7 +157,13 @@ var io=new IntersectionObserver(function(es){if(es.some(function(e){return e.isI
       return ctx.html(shell(ctx, "Order confirmed", `<h1>Thank you! Order #${o.n} is confirmed.</h1><p>Total paid: ${money(o.total)} with Visa ending 4242.</p>`));
     }
     if (p === "/help") return ctx.html(shell(ctx, "Help centre", `<h1>Help centre</h1><ul><li><a href="${BASE}/help/returns">Returns</a></li><li><a href="${BASE}/help/shipping">Shipping</a></li></ul>`));
-    if (p === "/help/shipping") return ctx.html(shell(ctx, "Shipping", `<h1>Shipping</h1><p>Free delivery on orders over $50. Standard delivery takes 2–4 working days.</p>`));
+    if (p === "/help/shipping") {
+      return ctx.html(shell(ctx, "Shipping", `<h1>Shipping</h1><p>Free delivery on orders over $50 within Varnholt. Standard delivery takes 2–4 working days.</p><p>Shipping abroad? See <a href="${BASE}/help/shipping/international">international delivery rates</a>.</p>`));
+    }
+    if (p === "/help/shipping/international") {
+      const rows = INTL_RATES.map(([c, d, f]) => `<tr><td>${esc(c)}</td><td>${esc(d)}</td><td>${money(f)}</td></tr>`).join("");
+      return ctx.html(shell(ctx, "International delivery", `<h1>International delivery</h1><p>Flat rate per order, any size.</p><table><thead><tr><th>Country</th><th>Delivery time</th><th>Cost</th></tr></thead><tbody>${rows}</tbody></table>`));
+    }
     if (p === "/help/returns") {
       return ctx.html(shell(ctx, "Returns policy", `<h1>Returns policy</h1><p>You can return most items for a full refund.</p><ul><li>Headphones and audio: 45 days.</li><li>Everything else: 30 days.</li></ul><p>Items must be unused and in their original packaging.</p>`));
     }

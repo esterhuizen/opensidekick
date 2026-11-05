@@ -7,6 +7,7 @@ const BASE = "https://gadgethub.test";
 const PRODUCTS = [
   { sku: "aurora-x2", name: "Aurora X2 Wireless Headphones", price: 54.5 },
   { sku: "nimbus-h7", name: "Nimbus H7 Headphones", price: 69.0 },
+  { sku: "orbit-kettle", name: "Orbit Electric Kettle", price: 36.5 },
 ];
 const money = (n) => "$" + n.toFixed(2);
 
@@ -39,7 +40,7 @@ export default {
   name: "gadgethub",
   hosts: ["gadgethub.test"],
   init: () => ({ cart: [], consent: null }),
-  searchDocs: () => PRODUCTS.map((p) => ({ url: `${BASE}/p/${p.sku}`, title: `${p.name} – GadgetHub`, snippet: `${money(p.price)} · Free next-day delivery.`, keywords: ["gadgethub", "headphones", "deal"] })),
+  searchDocs: () => PRODUCTS.map((p) => ({ url: `${BASE}/p/${p.sku}`, title: `${p.name} – GadgetHub`, snippet: `${money(p.price)} · Free next-day delivery.`, keywords: ["gadgethub", p.sku === "orbit-kettle" ? "kitchen" : "headphones", "deal"] })),
   handle(ctx) {
     const p = ctx.path;
     if (p === "/") return ctx.html(shell(ctx, "Deals", `<h1>Today's deals</h1>${PRODUCTS.map((x) => `<div class="card"><a href="${BASE}/p/${x.sku}">${esc(x.name)}</a> <b>${money(x.price)}</b></div>`).join("")}`));

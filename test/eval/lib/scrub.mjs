@@ -11,12 +11,15 @@ const PATTERNS = [
   /x-api-key["':\s]+[A-Za-z0-9._-]{16,}/gi,
 ];
 
+// Names of secret-looking env vars (XAUTHORITY is not one: Chromium needs it).
+export const SECRET_ENV_RE = /KEY|TOKEN|SECRET|PASS(?:WORD|WD)?(?:$|_)|CREDENTIAL|(?:^|_)AUTH/i;
+
 // Exact values of secret-looking env vars, longest first so a key that
 // contains another is replaced whole. Read at call time: dry-run plants
 // canaries after start-up.
 function secretEnv() {
   return Object.entries(process.env)
-    .filter(([k, v]) => /KEY|TOKEN|SECRET/i.test(k) && typeof v === "string" && v.length >= 12)
+    .filter(([k, v]) => SECRET_ENV_RE.test(k) && typeof v === "string" && v.length >= 12)
     .sort((a, b) => b[1].length - a[1].length);
 }
 

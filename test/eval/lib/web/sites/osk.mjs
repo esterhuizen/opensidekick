@@ -5,7 +5,7 @@ import { markdownToHtml } from "../../../../../src/common/markdown.js";
 import { page } from "../html.mjs";
 import { README, PRIVACY, CHANGELOG, INSTALLED, cmpVersion, releaseFor, longDate } from "../product.mjs";
 
-const nav = `<a href="https://opensidekick.app/">OpenSidekick</a><nav style="display:inline"><a href="https://opensidekick.app/docs">Docs</a><a href="https://opensidekick.app/changelog">Changelog</a><a href="https://opensidekick.app/privacy">Privacy</a><a href="https://github.com/opensidekick/opensidekick">GitHub</a></nav>`;
+const nav = `<a href="https://opensidekick.app/">OpenSidekick</a><nav style="display:inline"><a href="https://opensidekick.app/docs">Docs</a><a href="https://opensidekick.app/changelog">Changelog</a><a href="https://opensidekick.app/privacy">Privacy</a><a href="https://github.com/esterhuizen/opensidekick">GitHub</a></nav>`;
 
 // The changelog as the store version sees it: a synthetic entry on top when
 // the scenario says the store is ahead of this checkout.
