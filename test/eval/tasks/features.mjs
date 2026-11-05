@@ -11,7 +11,7 @@ export default [
     check: (r) => {
       const a = r.answer;
       if (/(not possible|can'?t be (changed|turned off)|no way to|\bno (?:auto|setting|option|switch)\b|(?:have|need) to approve (?:each|every))/i.test(a)) return { score: 0, wrong: true, why: "claims it can't be changed" };
-      if ((affirmed(a, /\bauto\b/i) && /approval|autonomy|mode|selector/i.test(a)) || affirmed(a, /always allow/i)) return { score: 1, why: "Auto approval or Always allow named" };
+      if ((affirmed(a, /\bauto\b/i) && /approval|autonomy|mode|selector/i.test(a)) || affirmed(a, /always allow/i) || affirmed(a, /don'?t ask|act without asking/i)) return { score: 1, why: "Auto approval or Always allow named" };
       if (/settings?/i.test(a) && /permission|approv|ask/i.test(a)) return { score: 0.5, why: "points at settings, no specific switch" };
       return { score: 0, why: "no way to stop the prompts given" };
     },
