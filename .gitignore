@@ -34,5 +34,8 @@ native/*.bat
 native/*.sh
 native/com.opensidekick.bridge.json
 
+# Helpfulness eval output (test/eval)
+test/eval/results/
+
 # Maintainer decision log — local only, the public repo stays end-user-facing
 .decisions/

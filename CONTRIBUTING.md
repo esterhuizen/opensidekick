@@ -40,6 +40,34 @@ Please:
 - Don't add analytics, telemetry, or any phone-home behavior. Privacy is a core
   promise of this project.
 
+## Helpfulness eval
+
+`test/eval` measures how often the agent gets everyday tasks done with a real
+model, how much friction it causes (permission cards, unnecessary questions,
+steps, time, tokens), and whether the safety floor holds. It drives the real
+extension, with its default settings, against a fake offline web: every
+hostname resolves to a local server, so runs are repeatable and nothing
+touches the live web.
+
+```bash
+xvfb-run -a npm run test:eval -- --dry-run          # self-test: fake model, no keys, no network
+xvfb-run -a npm run test:eval -- --models anthropic:claude-haiku-5-5,gemini:budget --stamp baseline
+xvfb-run -a npm run test:eval -- --list             # the task table
+```
+
+- Keys come from the environment (`CLAUDE_KEY`, `GEMINI_KEY`, `OPENROUTER_KEY`;
+  the npm script reads `.env`). A local proxy adds them to model requests, so
+  the browser profile only holds a placeholder. A provider without a key is
+  skipped. A real run costs money.
+- Results go to `test/eval/results/<stamp>/` (gitignored): `runs.jsonl`, a
+  transcript per run, `summary.md`, `summary.json` and `meta.json`.
+  `--compare <dir>` prints the change against an earlier run. `--rescore <dir>`
+  re-runs the checkers over saved transcripts.
+- Tasks are data in `test/eval/tasks/*.mjs`. Add a failure you hit to
+  `tasks/reported.mjs`: an id, a start URL (or `"newtab"`), the words you
+  typed, and a checker.
+- `node test/eval.test.mjs` checks the pure helpers (regexes, scoring, search).
+
 ## Good first issues
 
 - New provider presets (verify the base URL and default model).

@@ -1,0 +1,96 @@
+// Version questions, including the maintainer's reported failure. The store
+// page and chrome://extensions can't be read by any extension, and the model
+// is never told its own version, so today's honest best on the installed
+// version is 0.5 (design §2.4): these are the before/after measure.
+
+import { versionVerdict, INSTALLED_RE } from "../lib/check.mjs";
+import { CWS_ID, INSTALLED, releaseFor, addedTitles } from "../lib/web/product.mjs";
+
+const STORE = `https://chromewebstore.google.com/detail/opensidekick/${CWS_ID}`;
+const REPORTED = "why can't you check opensidekick version? just look at the page, then google the web extensions page for it and compare";
+const SEARCH = ["navigate", "https://www.google.com/search?q=opensidekick+chrome+web+store+version"];
+const COMPARE = [SEARCH, ["click", /releases/i], ["finish", "You're on {I}; the latest is {St}, so you're up to date."]];
+
+// "What's new": two distinctive words from each bold title under ### Added.
+const STOP = new Set(["opensidekick", "your", "from", "with", "this", "that"]);
+const TITLES = addedTitles(releaseFor(INSTALLED, new Date()).body);
+export const WHATS_NEW_KW = TITLES.map((t) =>
+  t.toLowerCase().split(/[^a-z0-9_]+/).filter((w) => w.length >= 4 && !STOP.has(w)).sort((a, b) => b.length - a.length).slice(0, 2),
+).filter((kw) => kw.length);
+
+export default [
+  {
+    id: "ver-store-compare",
+    category: "version",
+    start: STORE,
+    turns: [REPORTED],
+    check: (r) => versionVerdict(r),
+    fake: { oracle: [[["read"], ...COMPARE]] },
+  },
+  {
+    id: "ver-newtab-compare",
+    category: "version",
+    start: "newtab",
+    turns: [REPORTED],
+    check: (r) => versionVerdict(r),
+    fake: { oracle: [COMPARE] },
+  },
+  {
+    id: "ver-extensions-2turn",
+    category: "version",
+    start: "chrome://extensions",
+    turns: ["what version of opensidekick am i running?", REPORTED],
+    check: (r) => {
+      const v = versionVerdict(r);
+      const t1 = r.turns[0] ? versionVerdict(r, { text: r.turns[0].answer }) : null;
+      return { ...v, why: v.why + (t1 ? ` (turn 1: ${t1.why})` : "") };
+    },
+    fake: { oracle: [[["finish", "I can't see that from here; chrome://extensions shows it."]], [["read"], ...COMPARE]] },
+  },
+  {
+    id: "ver-plain",
+    category: "version",
+    start: "https://news.test/2026/11/bridge-vote",
+    turns: ["what version am i running?"],
+    check: (r) => {
+      const I = r.version.installed;
+      const others = (r.answer.match(/\b\d+\.\d+\.\d+\b/g) || []).filter((v) => v !== I);
+      if (others.length) return { score: 0, wrong: true, why: `names version ${others[0]}, installed is ${I}` };
+      const claim = (r.answer.match(INSTALLED_RE) || [])[1];
+      if (claim === I) return { score: 1, why: `states ${I} as its own version` };
+      if (/chrome:\/\/extensions/i.test(r.answer)) return { score: 0.5, why: "can't tell; points to chrome://extensions" };
+      return { score: 0, why: "no version and no pointer to chrome://extensions" };
+    },
+    fake: { oracle: [[["finish", "You're running OpenSidekick {I}."]]] },
+  },
+  {
+    id: "ver-update-available",
+    category: "version",
+    start: "newtab",
+    scenario: { storeVersion: "+patch" },
+    turns: ["is there an update for opensidekick?"],
+    check: (r) => {
+      const ans = r.answer;
+      if (/up[\s-]to[\s-]date|no update|already (on|have|running) the latest/i.test(ans) && !/update (is )?available|newer|out[\s-]of[\s-]date/i.test(ans)) {
+        return { score: 0, wrong: true, why: `says up to date; store has ${r.version.store}` };
+      }
+      return versionVerdict(r);
+    },
+    fake: {
+      oracle: [[["navigate", "https://www.google.com/search?q=opensidekick+update+latest+version"], ["click", /version history/i], ["finish", "Yes, an update is available: {St} is the latest; you have {I}."]]],
+    },
+  },
+  {
+    id: "ver-whats-new",
+    category: "version",
+    start: "newtab",
+    turns: ["whats new in the latest opensidekick?"],
+    check: (r) => {
+      const n = WHATS_NEW_KW.filter((kw) => kw.every((w) => r.answer.toLowerCase().includes(w))).length;
+      if (n >= 2) return { score: 1, why: `${n} of ${WHATS_NEW_KW.length} new features named` };
+      if (n === 1) return { score: 0.5, why: "1 new feature named" };
+      return { score: 0, why: "no new feature from the changelog named" };
+    },
+    fake: { oracle: [[["navigate", "https://opensidekick.app/changelog"], ["get_text"], ["finish", `New in {St}: ${TITLES.join("; ")}.`]]] },
+  },
+];
