@@ -430,7 +430,7 @@
   // free-text labels only when short and not a warning ("never share your
   // password").
   const SECRET_HINT_RE = /pass(word|wort|code)|\bpwd\b|\bpin\b(?!\s*code)|\botp\b|\botc\b|one.?time.?(pass)?(code|word)|verification code|security code|\bcvv2?\b|\bcvc2?\b|card.?number|cc.?num|\b(enter|user|device|sms|auth)(ication)? code\b|\d-digit code/i;
-  const HINT_WARNING_RE = /\b(never|don'?t|do not|forgot|search|drop)\b/i;
+  const HINT_WARNING_RE = /\b(never|don'?t|do not|forgot(ten)?|reset|search|drop|coupon|promo|voucher|discount|gift)\b/i;
   function isSecretField(el) {
     const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
     if (tag !== "input" && tag !== "textarea") return false;
@@ -443,12 +443,16 @@
     } catch {
       /* ignore */
     }
-    let named = false;
-    if (tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
+    // name/id on every field, split into words (user_pwd, loginPwd, txtPwd);
+    // free-text labels only on single-line inputs that aren't search, email or
+    // url, and only when short and not a warning ("never share your password").
+    const ident = [el.name, el.id].map((t) => String(t || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " ")).join(" ");
+    let named = SECRET_HINT_RE.test(ident);
+    if (!named && tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
       const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? el.labels[0].textContent : ""]
-        .map((t) => String(t || "").trim())
-        .filter((t) => t && t.length <= 40 && !HINT_WARNING_RE.test(t));
-      named = SECRET_HINT_RE.test([el.name, el.id].join(" ")) || free.some((t) => SECRET_HINT_RE.test(t));
+        .map((t) => String(t || "").replace(/[\u2018\u2019]/g, "'").trim())
+        .filter((t) => t && t.length <= 60 && !HINT_WARNING_RE.test(t));
+      named = free.some((t) => SECRET_HINT_RE.test(t));
     }
     const secret = (tag === "input" && el.type === "password") || masked || named || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
     if (secret) everSecret.add(el);

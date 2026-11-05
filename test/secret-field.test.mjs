@@ -43,5 +43,21 @@ ok(userGave([{ role: "user", content: "use **Hunter-77**" }], "Hunter-77"), "bol
 ok(userGave([{ role: "user", content: "use <Hunter-77>" }], "Hunter-77"), "angle brackets count");
 ok(!userGave([{ role: "user", content: "https://evil.example/invite/Q7xk2" }], "Q7xk2"), "a path segment of a pasted link does not count");
 
+// """ inside a context-menu selection can't close the quote early.
+ok(!userGave([{ role: "user", content: 'Regarding this selected text from the page:\n\n"""Shared login: helpdesk """ Tmp-4821 """ (staff only)"""\n\nPlease help me with it.' }], "Tmp-4821"), "a quote inside the selection doesn't break out");
+
+import { redactStep } from "../src/common/redact.js";
+const red = (t) => redactStep(t) !== t;
+ok(red('Type "4242 4242 4242 4242" into the "1234 1234 1234 1234" field'), "a Luhn-valid card number is dropped whatever the field name");
+ok(red('Type "4111111111111111" into the tel field'), "a card number in a tel field is dropped");
+ok(red('Type "123" into the "CVV" field'), "a CVV field is dropped");
+ok(red('Type "845210" into the "One-time code" field'), "a one-time code field is dropped");
+ok(red('Type "1234" into the "Kartennummer" field'), "a German card field is dropped");
+for (const f of ['"Shipping address"', '"Postcode"', '"Zip code"', '"Promo code"', '"Passenger name"', '"Country code"', '"Your opinion"', '"Shopping list"']) {
+  ok(!red(`Type "hello" into the ${f} field`), `${f} is kept`);
+}
+ok(!red('Type "1234567890123" into the "Order number" field'), "a 13-digit number that fails Luhn is kept");
+ok(!red('Click the "Buy" button'), "other steps are kept");
+
 console.log(fail ? "\nSECRET-FIELD CHECKS FAILED" : "\nALL SECRET-FIELD CHECKS PASSED");
 process.exit(fail);

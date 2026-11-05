@@ -27,8 +27,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   approve the card. Fields are recognised by their type, autocomplete hint,
   masking and name, so an unusual custom field can still be missed. The
   run-JavaScript tool (off by default) is not covered by this check.
-- Workflows recorded on 0.6.0 or earlier no longer replay what was typed into
-  card or code fields.
+- Workflows recorded on 0.6.0 or earlier leave out values that look like card
+  numbers, and values typed into fields named like card, CVV, PIN, code or
+  password, when they are replayed. They are still stored until you delete the
+  workflow.
+- **A follow-up message can't skip a confirmation.** Each new task in a chat
+  reads the page before it acts, so a Buy/Pay/Delete-like button seen in an
+  earlier task still gets its confirmation card. Before this, a follow-up
+  could click it without one.
 - The workflow recorder no longer saves what you type into card or code fields.
 
 ## [0.6.0] — 2026-11-05

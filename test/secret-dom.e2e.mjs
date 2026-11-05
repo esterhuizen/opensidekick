@@ -32,6 +32,13 @@ const CASES = [
   ["email", `<label>Email <a href="#">Forgot password?</a><input id="email" type="email" name="email"></label>`, false],
   ["company", `<label for="company">Company</label><input id="company" name="company">`, false],
   ["passport", `<input id="passport" placeholder="Passport number">`, false],
+  ["userpwd", `<input id="userpwd" name="user_pwd" type="text">`, true],
+  ["loginPwd", `<input id="loginPwd" type="text">`, true],
+  ["otpemail", `<textarea id="otpemail" name="otp_code"></textarea>`, true],
+  ["verify60", `<input id="verify60" placeholder="Enter the verification code sent to your email">`, true],
+  ["curly", `<input id="curly" aria-label="Message us (don’t share your password)">`, false],
+  ["userlabel", `<label for="userlabel">Username <a href="#">Forgotten your password?</a></label><input id="userlabel" name="username">`, false],
+  ["coupon", `<input id="coupon" placeholder="Coupon code">`, false],
   ["toggle", `<label for="toggle">Your key</label><input id="toggle" type="password">`, true],
 ];
 

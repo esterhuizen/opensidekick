@@ -15,6 +15,7 @@ import {
 } from "../common/constants.js";
 import { matchPrompts, isSlashQuery } from "../common/prompts.js";
 import { escapeHtml } from "../common/escape.js";
+import { redactStep } from "../common/redact.js";
 import { markdownToHtml, createStreamingRenderer, renderTick, CODE_CLASS, setHighlighter } from "../common/markdown.js";
 import { relativeTime } from "../background/sessions.js";
 import { originOf, storedRule } from "../background/permissions.js";
@@ -1399,14 +1400,6 @@ function replayWorkflow(wf) {
   send({ type: MSG.RUN_TASK, task: workflowPrompt(wf), newChat: newChatPending, source: "workflow" });
   newChatPending = false;
   setRunning(true);
-}
-
-// Workflows recorded before 0.6.1 kept what was typed into card and code fields.
-// Leave those values out of the prompt; the user fills such fields themselves.
-const SECRET_STEP_RE = /^Type "[\s\S]*" into the ([\s\S]*(card|cvv|cvc|security|code|pin|otp|expir|pass)[\s\S]*) field$/i;
-function redactStep(text) {
-  const m = SECRET_STEP_RE.exec(text);
-  return m ? `Fill in the ${m[1]} field yourself (a secret value is not replayed)` : text;
 }
 
 function workflowPrompt(wf) {

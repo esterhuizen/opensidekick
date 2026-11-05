@@ -150,7 +150,11 @@ export async function runAgent(deps) {
   // Set when the agent's tab or page changes under it (navigate, open_tab,
   // switch_tab): it must read the new page before acting there, so refs and
   // labels from another page can't be reused and (D) sees the right labels.
-  let needsRead = false;
+  // Each run starts needing a read: refs and labels from an earlier run in this
+  // chat may be stale, and (D)'s buy/pay/delete check and the secret-field card
+  // only see the labels read in this run.
+  let needsRead = true;
+  let freshRun = true; // the read is needed because this is a new run, not a page change
   // Set once the run has been on a sensitive page (banking, payments, crypto):
   // from then on every navigation asks, since the next URL could carry data
   // read there (?balance=…) to another site.
@@ -542,13 +546,13 @@ export async function runAgent(deps) {
         const currentOrigin = originOf(url);
 
         // (A0) After the tab or page changed under the agent, read before acting.
-        if (actsOnPage && needsRead) {
+        if (actsOnPage && needsRead && !(freshRun && call.name === "scroll")) {
           pushToolResult(conversation, call, {
             ok: false,
-            error: "You are on a different page now. Call read_page before acting on it.",
+            error: freshRun ? "Call read_page before acting: refs from an earlier task may be out of date." : "You are on a different page now. Call read_page before acting on it.",
           });
-          emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: read the new page first" });
-          emit({ kind: "warning", text: `Blocked ${call.name}: the agent moved to another page and hasn't read it yet.` });
+          emit({ kind: "tool_end", name: call.name, ok: false, summary: "blocked: read the page first" });
+          if (!freshRun) emit({ kind: "warning", text: `Blocked ${call.name}: the agent moved to another page and hasn't read it yet.` });
           continue;
         }
 
@@ -593,7 +597,7 @@ export async function runAgent(deps) {
         // Filling a password, card or code field always asks, naming the site,
         // so a value the user gave can't be typed into a look-alike page unseen.
         secretWhy = "";
-        if (!gateReads && call.name === "type_text" && lastSecret.has(call.args?.ref)) {
+        if (!gateReads && call.name === "type_text" && lastSecret.has(call.args?.ref) && ctx.secretOk(call.args?.text)) {
           forceSensitive = true;
           secretWhy = "Typing into a password, card or code field";
         }
@@ -736,6 +740,7 @@ export async function runAgent(deps) {
         observedOrigin = null;
         lastElements.clear();
         lastSecret.clear();
+        freshRun = false;
         const landed = await tabUrl(focusedTabId);
         if (isSensitive(landed) || isSensitive(toolResult?.url || "")) sawSensitive = true;
       }
@@ -747,6 +752,7 @@ export async function runAgent(deps) {
         observedOrigin = originOf(toolResult.url) || observedOrigin;
         if (call.name === "read_page") {
           needsRead = false; // refs and labels now come from this page
+          freshRun = false;
           lastElements.clear();
           lastSecret.clear();
           for (const el of toolResult.elements || []) {
