@@ -1401,8 +1401,16 @@ function replayWorkflow(wf) {
   setRunning(true);
 }
 
+// Workflows recorded before 0.6.1 kept what was typed into card and code fields.
+// Leave those values out of the prompt; the user fills such fields themselves.
+const SECRET_STEP_RE = /^Type "[\s\S]*" into the ([\s\S]*(card|cvv|cvc|security|code|pin|otp|expir|pass)[\s\S]*) field$/i;
+function redactStep(text) {
+  const m = SECRET_STEP_RE.exec(text);
+  return m ? `Fill in the ${m[1]} field yourself (a secret value is not replayed)` : text;
+}
+
 function workflowPrompt(wf) {
-  const steps = (wf.steps || []).map((s, i) => `${i + 1}. ${s.description || s}`).join("\n");
+  const steps = (wf.steps || []).map((s, i) => `${i + 1}. ${redactStep(String(s.description || s))}`).join("\n");
   let p = `Replay this saved workflow named "${wf.name}". Perform each step in order on the page using your tools (read_page, click, type, and so on). Adapt to the current page if it differs slightly, and stop if a step can't be completed.\n\nSteps:\n${steps}`;
   if (wf.startUrl) p = `First make sure the current tab is at ${wf.startUrl} (navigate there if it isn't). Then ${p}`;
   return p;

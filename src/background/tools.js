@@ -326,6 +326,7 @@ export async function executeTool(name, args, ctx) {
         text: args.text,
         submit: !!args.submit,
         secretOk: typeof ctx.secretOk === "function" && ctx.secretOk(args.text) === true,
+        secretConfirmed: ctx.secretConfirmed === true,
       });
     case "select_option":
       return await csSend(await ctx.getTabId(), {

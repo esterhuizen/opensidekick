@@ -435,7 +435,7 @@ async function reconcileAlarms() {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let task = null;
   if (info.menuItemId === "ask-opensidekick" && info.selectionText) {
-    task = `Regarding this selected text from the page:\n\n"""${info.selectionText}"""\n\nPlease help me with it.`;
+    task = `Regarding this selected text from the page:\n\n"""${String(info.selectionText).replace(/"""/g, '"')}"""\n\nPlease help me with it.`;
   } else if (info.menuItemId === "summarize-page") {
     task = "Summarize the current page for me.";
   }

@@ -30,7 +30,7 @@ How to work:
 - A refusal from OpenSidekick's safety rules, a blocked site or an action the user declined is final: don't look for a way around it; tell the user.
 - Don't claim you can't do things you can (browse, open sites, read pages, fill forms). You may still decline or ask before anything risky; say why.
 - Take the smallest number of steps needed. Do not repeat an action that already succeeded.
-- If a page requires login, a CAPTCHA, or a payment, stop and ask the user to handle it — never attempt to bypass these.
+- If a page requires a login the user hasn't given you, a CAPTCHA, or a payment, stop and ask the user to handle it — never attempt to bypass these.
 - When the task is done or you are blocked, call finish with a concise summary for the user.
 - If you need something only the user can give (a choice, missing details, a login), call ask_user. Don't use it to ask whether to continue. Small details that are easy to undo (a search term, a sort order, which result to open) you can choose yourself — say what you chose. Never choose who something goes to, what is bought, an amount, or a date or time for a booking: ask.
 
@@ -499,6 +499,8 @@ export async function runAgent(deps) {
       const actsOnPage = MUTATING_TOOLS.has(call.name) && call.name !== "navigate" && !loadsTarget;
       const gateReadsAll = PAGE_READ_TOOLS.has(call.name); // a block rule applies to reads in every mode
       let runArgs = call.args || {};
+      let secretConfirmed = false; // the user approved this exact secret-field fill
+      let secretWhy = ""; // set when this call fills a password, card or code field
       if (MUTATING_TOOLS.has(call.name) || gateReadsAll || isFocus) {
         let url = "";
         let pageTitle = "";
@@ -590,7 +592,7 @@ export async function runAgent(deps) {
         }
         // Filling a password, card or code field always asks, naming the site,
         // so a value the user gave can't be typed into a look-alike page unseen.
-        let secretWhy = "";
+        secretWhy = "";
         if (!gateReads && call.name === "type_text" && lastSecret.has(call.args?.ref)) {
           forceSensitive = true;
           secretWhy = "Typing into a password, card or code field";
@@ -689,6 +691,7 @@ export async function runAgent(deps) {
             needsRead = true;
             continue;
           }
+          if (secretWhy && verdict.why === secretWhy) secretConfirmed = true;
           // Sensitive actions always re-prompt — never persist or session-grant.
           if (!verdict.sensitive) {
             if (choice === "always") await saveSitePermission(origin, "allow");
@@ -710,10 +713,12 @@ export async function runAgent(deps) {
       if (ACT_TOOLS.has(call.name)) acted = true;
       let toolResult;
       try {
+        ctx.secretConfirmed = secretConfirmed;
         toolResult = await executeTool(call.name, runArgs, ctx);
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
       }
+      ctx.secretConfirmed = false;
       if (hideForShot) await setOverlay(focusedTabId, "show", overlayLabel);
 
       // A tool that returns an image (screenshot) can't carry it in an OpenAI
@@ -1002,7 +1007,12 @@ export function userGave(conversation, text) {
   );
 }
 
-// Page text the context menu quotes into a message ("""…""", to the end if unclosed).
+// Page text the context menu quotes into a message: everything from the first
+// """ to the last (to the end if unclosed), so a """ inside the selection can't
+// close the quote early.
 function stripQuoted(text) {
-  return text.replace(/"""[\s\S]*?(?:"""|$)/g, " ");
+  const a = text.indexOf('"""');
+  if (a < 0) return text;
+  const b = text.lastIndexOf('"""');
+  return b > a ? text.slice(0, a) + " " + text.slice(b + 3) : text.slice(0, a);
 }

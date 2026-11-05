@@ -20,9 +20,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **Password, card and one-time-code fields** only take a value you typed in
   the chat yourself (not text from a page, a replayed workflow or a quoted
-  selection), and every fill asks first, naming the site. Fields stay protected
+  selection), and you approve each fill on a card that names the site. Fields stay protected
   after a "show password" toggle. Local agents on the bridge can't fill them.
-  The run-JavaScript tool (off by default) is not covered by this check.
+  Values shorter than 4 characters (a 3-digit CVV) are never filled; type
+  those yourself. Scheduled tasks can't log in, because no one is there to
+  approve the card. Fields are recognised by their type, autocomplete hint,
+  masking and name, so an unusual custom field can still be missed. The
+  run-JavaScript tool (off by default) is not covered by this check.
+- Workflows recorded on 0.6.0 or earlier no longer replay what was typed into
+  card or code fields.
 - The workflow recorder no longer saves what you type into card or code fields.
 
 ## [0.6.0] — 2026-11-05

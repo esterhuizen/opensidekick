@@ -275,6 +275,9 @@
         if (isSecretField(el) && msg.secretOk !== true) {
           return { ok: false, error: "This is a password, card or one-time-code field. You may only type a value the user gave you in this chat. Ask the user to fill it in themselves. Don't try to fill this field any other way." };
         }
+        if (isSecretField(el) && msg.secretConfirmed !== true) {
+          return { ok: false, error: "This is a password, card or one-time-code field and the user must approve the fill. Call read_page again, then retry." };
+        }
         return type(el, msg.text, msg.submit);
       case "select":
         return select(el, msg.value);
@@ -422,7 +425,12 @@
   // stays secret once seen, so a "show password" toggle (type=password → text)
   // doesn't turn it into a plain field.
   const everSecret = new WeakSet();
-  const SECRET_HINT_RE = /pass(word|code)|pwd|\bpin\b|\botp\b|one.?time|verification code|security code|\bcvv\b|\bcvc\b|card.?number/i;
+  // Names and short labels that mark a password, card or code field. Applied to
+  // single-line inputs only (not textareas, search, email or url fields), and
+  // free-text labels only when short and not a warning ("never share your
+  // password").
+  const SECRET_HINT_RE = /pass(word|wort|code)|\bpwd\b|\bpin\b(?!\s*code)|\botp\b|\botc\b|one.?time.?(pass)?(code|word)|verification code|security code|\bcvv2?\b|\bcvc2?\b|card.?number|cc.?num|\b(enter|user|device|sms|auth)(ication)? code\b|\d-digit code/i;
+  const HINT_WARNING_RE = /\b(never|don'?t|do not|forgot|search|drop)\b/i;
   function isSecretField(el) {
     const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
     if (tag !== "input" && tag !== "textarea") return false;
@@ -435,8 +443,13 @@
     } catch {
       /* ignore */
     }
-    const hint = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? el.labels[0].textContent : ""].join(" ");
-    const named = SECRET_HINT_RE.test(hint);
+    let named = false;
+    if (tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
+      const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? el.labels[0].textContent : ""]
+        .map((t) => String(t || "").trim())
+        .filter((t) => t && t.length <= 40 && !HINT_WARNING_RE.test(t));
+      named = SECRET_HINT_RE.test([el.name, el.id].join(" ")) || free.some((t) => SECRET_HINT_RE.test(t));
+    }
     const secret = (tag === "input" && el.type === "password") || masked || named || auto.some((t) => /^(cc-(number|csc|exp|exp-month|exp-year)|one-time-code|current-password|new-password)$/.test(t));
     if (secret) everSecret.add(el);
     return secret;
