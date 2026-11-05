@@ -36,8 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   reads the page again before it clicks, types or presses keys on an element,
   so a button seen in an earlier task still gets its confirmation card (before,
   a follow-up could click it without one). Pressing Enter or Space on such a
-  button, and typing with submit in a form whose button says "Place order" or
-  similar, now ask too.
+  button, and typing with submit (or pressing Enter) in a form that has a
+  "Place order"-like button, now ask too, and the card says what it confirms.
+  These checks read the button labels the agent last saw, so a page that
+  relabels a button after the read can still slip past them.
 - The workflow recorder no longer saves what you type into fields it
   recognises as card or code fields.
 

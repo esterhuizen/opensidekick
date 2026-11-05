@@ -56,7 +56,26 @@
   // With a query, only the best-matching elements come back (word overlap on
   // name/placeholder/href), so big pages don't flood a small model's context.
   // ponytail: plain keyword match, no synonyms; add a model rerank if it misses.
+  // Labels of a form's buttons, computed once per form per read.
+  let formLabelCache = new WeakMap();
+  function formButtonLabels(form) {
+    if (formLabelCache.has(form)) return formLabelCache.get(form);
+    const names = [];
+    for (const c of Array.from(form.elements || [])) {
+      const t = c.tagName ? c.tagName.toLowerCase() : "";
+      if (t === "button" || (t === "input" && /^(submit|image|button)$/i.test(c.type))) {
+        const n = accessibleName(c);
+        if (n && !names.includes(n)) names.push(n.slice(0, 60));
+        if (names.length >= 4) break;
+      }
+    }
+    const out = names.join(" / ");
+    formLabelCache.set(form, out);
+    return out;
+  }
+
   function readPage(query) {
+    formLabelCache = new WeakMap();
     refMap = new Map();
     refCounter = 0;
 
@@ -172,11 +191,13 @@
     if (el.getAttribute("aria-checked")) out.checked = el.getAttribute("aria-checked");
     if (el.disabled) out.disabled = true;
     // Pressing Enter or submitting from this field sends its form: name the
-    // form's submit button, so a "Place order" form still asks.
-    if (el.form && (tag === "input" || tag === "textarea" || tag === "select") && !/^(submit|image|button|reset)$/i.test(el.type || "")) {
-      const btn = el.form.querySelector('button[type="submit"],button:not([type]),input[type="submit"],input[type="image"]');
-      const fs = btn ? accessibleName(btn) : "";
-      if (fs) out.formSubmit = fs.slice(0, 80);
+    // form's buttons (submit, plain and form= ones outside it), so a form with
+    // a "Place order" button asks whichever button the page wires up.
+    // The same form type() would submit: its own, else the one around it.
+    const formOf = el.form || el.closest("form");
+    if (formOf && (tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable) && !/^(submit|image|button|reset)$/i.test(el.type || "")) {
+      const fs = formButtonLabels(formOf);
+      if (fs) out.formSubmit = fs;
     }
     // Clicking it submits a form, whatever its label says.
     if (el.form && ((tag === "button" && el.type === "submit") || (tag === "input" && (el.type === "submit" || el.type === "image")))) out.submits = true;
@@ -437,8 +458,8 @@
   // expiry) don't when the label is about a coupon, a reset or a search. A
   // label that warns ("never share your password") only counts when it starts
   // with the hint ("Verification code (don't share it)").
-  const STRONG_HINT_RE = /pass(word|wort|code)|passwd|\bpwd\b|kennwort|mot de passe|contrase(n|ñ)a|\bpin\b(?!\s*(code|name))|\bcvv2?\b|\bcvc2?\b|\bcsc\b|card.?number|cc.?num|security answer/i;
-  const WEAK_HINT_RE = /\botp\b|\botc\b|\b2fa\b|two.?factor|authenticator|(recovery|backup) code|one.?time.?(pass)?(code|word)|verification code|security code|\b(enter|user|device|sms|auth)(ication)? code\b|\d.?digit code|expir(y|ation)/i;
+  const STRONG_HINT_RE = /pass(word|wort|code)|passwd|\bpwd\b|kennwort|mot de passe|contrase(n|ñ)a|\bpin\b(?!\s*(code|name))|\bcvv2?\b|\bcvc2?\b|\bcsc\b|card.?number|card.?no\b|cc.?num|credit.?card|security answer/i;
+  const WEAK_HINT_RE = /\botp\b|\botc\b|\b2fa\b|two.?factor|authenticator|(recovery|backup) code|one.?time.?(pass)?(code|word)|verification code|security code|\b(enter|user|device|sms|auth|authentication|login|confirmation|totp)\s+code\b|\btotp\b|\d.?digit code|expir(y|ation)/i;
   const CONTEXT_RE = /\b(forgot(ten)?|reset|search|drop|coupon|promo|voucher|discount|gift|referral)\b/i;
   const NEGATION_RE = /\b(never|don'?t|do not)\b/i;
   const hintIn = (t) => STRONG_HINT_RE.test(t) || (WEAK_HINT_RE.test(t) && !CONTEXT_RE.test(t));
@@ -447,7 +468,8 @@
     if (!label) return "";
     try {
       const c = label.cloneNode(true);
-      for (const x of c.querySelectorAll("a,button,input,select,textarea")) x.remove();
+      for (const x of c.querySelectorAll("input,select,textarea")) x.remove();
+      for (const x of c.querySelectorAll("a,button")) if (CONTEXT_RE.test(x.textContent || "")) x.remove();
       return c.textContent || "";
     } catch {
       return label.textContent || "";
@@ -468,7 +490,7 @@
     // name/id on every field, raw and split into words (PassWord, user_pwd).
     const ids = [el.name, el.id].map((t) => String(t || ""));
     const split = ids.map((t) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " "));
-    let named = [...ids, ...split].some((t) => t && hintIn(t));
+    let named = [...ids, ...split].some((t) => t && (STRONG_HINT_RE.test(t) || WEAK_HINT_RE.test(t)));
     // Free-text labels on single-line inputs that aren't search, email or url.
     if (!named && tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
       const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? labelWords(el.labels[0]) : ""]
@@ -477,7 +499,7 @@
       named = free.some((t) => {
         if (!hintIn(t)) return false;
         if (!NEGATION_RE.test(t)) return true;
-        const lead = t.split(/[(:,–—-]/)[0];
+        const lead = t.split(/[(:,–—]|\s-\s/)[0];
         return hintIn(lead);
       });
     }
@@ -505,12 +527,15 @@
     }
     if (submit) {
       const key = { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13, which: 13 };
-      el.dispatchEvent(new KeyboardEvent("keydown", key));
+      const handled = !el.dispatchEvent(new KeyboardEvent("keydown", key));
       el.dispatchEvent(new KeyboardEvent("keyup", key));
       const form = el.form || el.closest("form");
-      if (form) {
+      // A page that handled Enter itself has submitted already; otherwise
+      // submit like Enter does, through the form's default button.
+      if (form && !handled) {
+        const dflt = Array.from(form.elements || []).find((c) => c.type === "submit" || c.type === "image") || null;
         try {
-          if (typeof form.requestSubmit === "function") form.requestSubmit();
+          if (typeof form.requestSubmit === "function") form.requestSubmit(dflt && dflt.form === form ? dflt : undefined);
           else form.submit();
         } catch {
           /* ignore */

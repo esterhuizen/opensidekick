@@ -506,6 +506,7 @@ export async function runAgent(deps) {
       let runArgs = call.args || {};
       let secretConfirmed = false; // the user approved this exact secret-field fill
       let secretWhy = ""; // set when this call fills a password, card or code field
+      let actionWhy = ""; // why a key press or a submit is treated as buy/pay/delete
       if (MUTATING_TOOLS.has(call.name) || gateReadsAll || isFocus) {
         let url = "";
         let pageTitle = "";
@@ -582,11 +583,22 @@ export async function runAgent(deps) {
         // a field sends its form: judge the element's label and the form's
         // submit button the same way.
         if (!gateReads && call.name === "press_keys" && call.args && "ref" in call.args) {
-          const keys = Array.isArray(call.args.keys) ? call.args.keys.map((k) => String(k).toLowerCase()) : [];
-          const activates = keys.some((k) => k === "enter" || k === " " || k === "space" || k === "spacebar");
-          if (activates && (isSensitiveActionText(lastElements.get(call.args.ref)) || isSensitiveActionText(lastFormSubmit.get(call.args.ref)))) forceSensitive = true;
+          const keys = Array.isArray(call.args.keys) ? call.args.keys.map((k) => (typeof k === "string" ? k.toLowerCase() : "")) : [];
+          const activates = keys.some((k) => k === "enter" || k === "numpadenter" || k === "return" || k === " " || k === "space" || k === "spacebar");
+          const elLabel = lastElements.get(call.args.ref) || "";
+          const formLabel = lastFormSubmit.get(call.args.ref) || "";
+          if (activates && isSensitiveActionText(elLabel)) {
+            forceSensitive = true;
+            actionWhy = `Presses ${keys.includes(" ") || keys.includes("space") || keys.includes("spacebar") ? "Space" : "Enter"} on \u201c${elLabel.slice(0, 60)}\u201d`;
+          } else if (activates && isSensitiveActionText(formLabel)) {
+            forceSensitive = true;
+            actionWhy = `Submits a form with the button \u201c${formLabel.slice(0, 60)}\u201d`;
+          }
         }
-        if (!gateReads && call.name === "type_text" && call.args?.submit && isSensitiveActionText(lastFormSubmit.get(call.args?.ref))) forceSensitive = true;
+        if (!gateReads && call.name === "type_text" && call.args?.submit && isSensitiveActionText(lastFormSubmit.get(call.args?.ref))) {
+          forceSensitive = true;
+          actionWhy = `Submits a form with the button \u201c${String(lastFormSubmit.get(call.args.ref)).slice(0, 60)}\u201d`;
+        }
 
         let verdict = evaluate(call.name, url, config, sessionGrants);
         let promptUrl = url; // the site the card names
@@ -615,7 +627,7 @@ export async function runAgent(deps) {
           secretWhy = "Typing into a password, card or code field";
         }
         if (forceSensitive && verdict.decision !== "block") {
-          verdict = secretWhy ? { decision: "prompt", sensitive: true, why: secretWhy } : { decision: "prompt", sensitive: true };
+          verdict = { decision: "prompt", sensitive: true, ...(secretWhy || actionWhy ? { why: [secretWhy, actionWhy].filter(Boolean).join("; ") } : {}) };
         } else if (verdict.decision === "prompt" && !verdict.sensitive) {
           // In plan mode, act freely on sites the user approved in the plan —
           // never on a sensitive site, which asks per action. The host is the
@@ -708,7 +720,7 @@ export async function runAgent(deps) {
             needsRead = true;
             continue;
           }
-          if (secretWhy && verdict.why === secretWhy) secretConfirmed = true;
+          if (secretWhy && typeof verdict.why === "string" && verdict.why.startsWith(secretWhy)) secretConfirmed = true;
           // Sensitive actions always re-prompt — never persist or session-grant.
           if (!verdict.sensitive) {
             if (choice === "always") await saveSitePermission(origin, "allow");

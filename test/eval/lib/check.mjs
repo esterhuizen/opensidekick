@@ -157,8 +157,25 @@ export function versionClaims(text) {
       const b = a + m[0].length;
       const v = m[1];
       if (COMPARATOR.test(sent.slice(Math.max(0, a - 24), a))) continue;
-      const dI = nearest(sent, INSTALLED_CUE, a, b);
-      const dS = nearest(sent, STORE_CUE, a, b);
+      // Cues in the version's own clause win ("installed is 0.6.0, latest is
+      // 0.6.1"); the whole sentence is the fallback.
+      const parts = [...sent.matchAll(/,|;|\bbut\b|\bhowever\b|\band\b|\s[—–-]\s|\(|\)|\*\*/gi)].map((x) => x.index);
+      const cs = Math.max(0, ...parts.filter((p) => p < a));
+      const ce = Math.min(sent.length, ...parts.filter((p) => p >= b));
+      const clause = sent.slice(cs, ce);
+      let dI = nearest(clause, INSTALLED_CUE, a - cs, b - cs);
+      let dS = nearest(clause, STORE_CUE, a - cs, b - cs);
+      if (dI === Infinity && dS === Infinity) {
+        // A label just before it ("**Installed:** 0.6.0"): the previous clause.
+        const ps = Math.max(0, ...parts.filter((p) => p < cs));
+        const prev = sent.slice(ps, ce);
+        dI = nearest(prev, INSTALLED_CUE, a - ps, b - ps);
+        dS = nearest(prev, STORE_CUE, a - ps, b - ps);
+      }
+      if (dI === Infinity && dS === Infinity) {
+        dI = nearest(sent, INSTALLED_CUE, a, b);
+        dS = nearest(sent, STORE_CUE, a, b);
+      }
       if (dI < dS) {
         if (HEDGE.test(clauseOf(sent, a))) out.hedged.push(v);
         else out.installed.push(v);
