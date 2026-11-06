@@ -326,13 +326,15 @@ export async function classifyAction(src, params = {}, opts = {}) {
   return guard(breaker, emit, async () => {
     // Inside the guard: a caller handing us an odd shape must degrade to null
     // like any other failure, not throw out of the agent's step.
-    const { tool, url, title, label, userRequest } = params;
+    const { tool, url, title, label, userRequest, paymentStep, link } = params;
     const state = [
       ["User request", clip(userRequest, ACTION_FIELD_LIMITS.userRequest)],
       ["Tool", clip(tool, ACTION_FIELD_LIMITS.tool)],
       ["Page URL", clip(url, ACTION_FIELD_LIMITS.url)],
       ["Page title", clip(title, ACTION_FIELD_LIMITS.title)],
       ["Target", clip(label, ACTION_FIELD_LIMITS.label)],
+      ["Target is a link to", clip(link, ACTION_FIELD_LIMITS.url)],
+      ["Page asks for or shows payment details", paymentStep === true ? "yes" : paymentStep === false ? "no" : ""],
     ]
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}: ${v}`)
@@ -345,10 +347,10 @@ export async function classifyAction(src, params = {}, opts = {}) {
         risky: {
           type: "noul",
           instructions:
-            "Would this one action itself commit the user right now, in a way that is hard to undo: charging money or placing the final order, transferring money, deleting or destroying data, sending a message or email on their behalf, changing account or security settings, or submitting a legal or financial commitment? Steps that only move a shopping or booking flow to its next page (adding to a cart, opening the cart, Checkout, Finish order, Continue to delivery or to payment) are not commitments: the user still reviews and pays on a later page.",
+            "Would this one action itself commit the user right now, in a way that is hard to undo: charging money or placing the final order, transferring money, deleting or destroying data, sending a message or email on their behalf, changing account or security settings, or submitting a legal or financial commitment? Adding to a cart or opening the cart is not. A button that moves to the next page of a checkout is not, unless the page already holds payment details (a card form or a saved card), where the next button may place the order.",
           criteria: {
             true: "This action itself pays, places the final order, sends, or destroys something, or is otherwise hard to undo.",
-            false: "The action is browsing, reading, searching, filling a field, or moving to the next step of a checkout before the final pay or place-order step.",
+            false: "The action is browsing, reading, searching, filling a field, adding to a cart, or moving to a later checkout page on a page with no payment details.",
           },
         },
         severity: {

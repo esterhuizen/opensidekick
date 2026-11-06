@@ -1,4 +1,4 @@
-import { detectInjection, isSensitiveActionText, looksLikeSecret } from "../src/background/safety.js";
+import { detectInjection, isSensitiveActionText, looksLikeSecret, benignOnPayment } from "../src/background/safety.js";
 
 let fail = 0;
 const eq = (cond, msg) => {
@@ -24,8 +24,11 @@ eq(isSensitiveActionText("Transfer funds"), "'Transfer' is sensitive");
 eq(!isSensitiveActionText("Search"), "'Search' is not sensitive");
 eq(!isSensitiveActionText("Add to cart"), "'Add to cart' is not sensitive");
 // The steps before payment don't ask; the step that commits does.
-for (const t of ["Checkout", "Proceed to checkout", "Check out", "Order now", "Book now", "Reserve now", "Continue to payment", "Payment", "0 items · $0.00 Finish Order", "View cart"]) eq(!isSensitiveActionText(t), `'${t}' is not sensitive (a step before payment)`);
-for (const t of ["Pay $24.90", "Pay now", "Place Order", "Place your order", "Complete purchase", "Complete checkout", "Confirm and pay", "Submit payment", "Make payment", "Buy now", "Jetzt kaufen", "Zahlungspflichtig bestellen", "Subscribe", "Donate"]) eq(isSensitiveActionText(t), `'${t}' is sensitive`);
+for (const t of ["Checkout", "Proceed to checkout", "Check out", "Order now", "Continue to payment", "Payment", "0 items · $0.00 Finish Order", "View cart"]) eq(!isSensitiveActionText(t), `'${t}' is not sensitive (a step before payment)`);
+for (const t of ["Pay $24.90", "Pay now", "Place Order", "Place your order", "Complete purchase", "Complete checkout", "Confirm and pay", "Submit payment", "Make payment", "Buy now", "Book now", "Reserve now", "Pre-order now with 1-Click", "Jetzt kaufen", "Zahlungspflichtig bestellen", "Subscribe", "Donate"]) eq(isSensitiveActionText(t), `'${t}' is sensitive`);
+// On the payment step only plainly harmless labels go through without a card.
+for (const t of ["Back", "Edit order", "Change payment method", "Apply", "Add a tip", "$3", "15%", "Remove", "Help"]) eq(benignOnPayment(t), `'${t}' is harmless on the payment step`);
+for (const t of ["Continue", "Submit", "Order now", "Complete", "Next", "Confirm", "", "Back to cart and pay"]) eq(!benignOnPayment(t), `'${t}' asks on the payment step`);
 eq(!isSensitiveActionText("Read more"), "'Read more' is not sensitive");
 eq(!isSensitiveActionText(""), "empty label is not sensitive");
 

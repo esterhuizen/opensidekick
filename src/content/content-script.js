@@ -58,7 +58,8 @@
   // ponytail: plain keyword match, no synonyms; add a model rerank if it misses.
   // Labels of a form's buttons, computed once per form per read.
   let formLabelCache = new WeakMap();
-  let formPaysCache = new WeakMap(); // form -> has a card field, per read
+  let payingForms = null; // forms with a card field, one pass per read
+  let labelOf = null; // control -> its first label, one pass per read
   // Every button whose form owner is this form, in tree order: <input type=image>
   // (left out of form.elements) and form= ones outside it too. Not form.elements,
   // which a control named "elements" shadows.
@@ -100,7 +101,8 @@
   function readPage(query) {
     formLabelCache = new WeakMap();
     formButtonMap = null;
-    formPaysCache = new WeakMap();
+    payingForms = null;
+    labelOf = null;
     refMap = new Map();
     refCounter = 0;
 
@@ -234,36 +236,66 @@
     return out;
   }
 
-  // A card-payment field: card number, security code, expiry or name on card.
-  const CARD_HINT_RE = /card.?(number|no\b|num\b)|cc.?(num|number)\b|credit.?card|debit.?card|\bcvv2?\b|\bcvc2?\b|\bcsc\b|name on (the )?card|card.?holder|expir(y|ation)/i;
+  // A card-payment field: card number, security code or name on card. Expiry
+  // alone doesn't count (a passport has one), nor do library, loyalty or ID
+  // card numbers.
+  const CARD_HINT_RE = /card.?(number|no\b|num\b)|cc.?(num|number)\b|credit.?card|debit.?card|\bcvv2?\b|\bcvc2?\b|\bcsc\b|name on (the )?card|card.?holder/i;
+  const NOT_PAY_CARD_RE = /\b(library|loyalty|member(ship)?|rewards?|id|identity|passport|licen[cs]e|health|insurance|medicare|student|national|social security|tax)\b/i;
+  function labelFor(el) {
+    if (!labelOf) {
+      labelOf = new Map();
+      for (const l of document.querySelectorAll("label")) {
+        const c = l.control;
+        if (c && !labelOf.has(c)) labelOf.set(c, l);
+      }
+    }
+    return labelOf.get(el);
+  }
+  // The text of the elements an aria-labelledby names.
+  function labelledByText(el) {
+    const ids = el.getAttribute("aria-labelledby");
+    if (!ids) return "";
+    return ids.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map((n) => ownText(n)).join(" ");
+  }
   function isCardField(el) {
-    const tag = el && el.localName;
-    if (tag !== "input") return false;
+    if (!el || el.localName !== "input" || /^(hidden|search|submit|button|reset|image|file|checkbox|radio)$/i.test(el.type)) return false;
     const auto = (el.getAttribute("autocomplete") || "").toLowerCase();
     if (/\bcc-(number|csc|exp|exp-month|exp-year|name)\b/.test(auto)) return true;
-    const ids = [el.name, el.id].map((t) => String(t || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " "));
-    const label = el.labels && el.labels[0];
-    return [...ids, el.placeholder, el.getAttribute("aria-label"), labelWords(label, true)].some((t) => t && CARD_HINT_RE.test(String(t)));
+    const label = labelFor(el);
+    const texts = [
+      ...[el.name, el.id].map((t) => String(t || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " ")),
+      el.placeholder,
+      el.getAttribute("aria-label"),
+      labelledByText(el),
+      label ? labelWords(label, true) : "",
+    ].filter(Boolean);
+    return texts.some((t) => CARD_HINT_RE.test(t) && !NOT_PAY_CARD_RE.test(t));
   }
   function formPays(form) {
-    if (formPaysCache.has(form)) return formPaysCache.get(form);
-    let pays = false;
-    try {
-      for (const c of document.querySelectorAll("input")) if (c.form === form && isCardField(c)) { pays = true; break; }
-    } catch {
-      /* ignore */
+    if (!payingForms) {
+      payingForms = new Set();
+      try {
+        for (const c of document.querySelectorAll("input")) if (c.form && !payingForms.has(c.form) && isCardField(c)) payingForms.add(c.form);
+      } catch {
+        /* ignore */
+      }
     }
-    formPaysCache.set(form, pays);
-    return pays;
+    return payingForms.has(form);
   }
   // The page asks for payment: a card field, or a card frame from a payment
   // provider (Stripe, Braintree, Adyen…) whose fields the agent can't see.
+  const SAVED_PM_RE = /\b(?:visa|master\s?card|amex|american express|discover|maestro|card|debit|credit)\b[^\n]{0,30}?(?:ending(?:\s+in)?|[\u2022*\u00b7]{2,}|\.{3})\s*\d{4}\b|[\u2022*]{4}\s?\d{4}\b/i;
+  // Card-entry frames only: Stripe, Square, Braintree, Adyen... also render
+  // buttons, address and pay-later frames on carts and product pages.
+  const CARD_FRAME_RE = /\b(?:card|cvc|cvv|csc|expir\w*|security code)\b|card.?(?:number|details)|payment input|hosted.?field|checkout-frames/i;
+  const NOT_CARD_FRAME_RE = /button|express|messaging|address|link authentication|payment.?request/i;
   function paymentStepOnPage() {
     try {
+      if (SAVED_PM_RE.test(pageText())) return true;
       for (const c of document.querySelectorAll("input")) if (isCardField(c) && isVisible(c)) return true;
       for (const f of document.querySelectorAll("iframe")) {
         const hay = [f.getAttribute("title"), f.getAttribute("name"), f.getAttribute("src")].join(" ");
-        if (/stripe|braintree|adyen|checkout\.com|card.?(number|details)|payment/i.test(hay) && isVisible(f)) return true;
+        if (CARD_FRAME_RE.test(hay) && !NOT_CARD_FRAME_RE.test(hay) && isVisible(f)) return true;
       }
     } catch {
       /* ignore */
@@ -427,6 +459,12 @@
   }
 
   function dblclick(el) {
+    // A double click presses a button twice: the second press may be a Pay the
+    // first one revealed, or a second order. Buttons take click_element.
+    const tag = el.localName;
+    if (tag === "button" || el.getAttribute("role") === "button" || (tag === "input" && /^(submit|button|image|reset)$/i.test(el.type))) {
+      return { ok: false, error: "That is a button: use click_element. A double click would press it twice." };
+    }
     click(el);
     click(el);
     el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
@@ -587,7 +625,7 @@
     // Free-text labels on single-line inputs that aren't search, email or url.
     if (!named && tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
       const label = el.labels && el.labels[0];
-      const free = [el.placeholder, el.getAttribute("aria-label"), labelWords(label, false), labelWords(label, true)]
+      const free = [el.placeholder, el.getAttribute("aria-label"), labelledByText(el), labelWords(label, false), labelWords(label, true)]
         .map((t) => String(t || "").replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ").trim())
         .filter((t) => t && t.length <= 60);
       named = free.some((t) => {

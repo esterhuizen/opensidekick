@@ -84,8 +84,10 @@ genuinely agentic, and usable with any LLM — including fully local models.**
   visible on-page activity indicator
   with a Stop button so you always see when it's acting; a re-check that **blocks
   an action if the page changed origin** since it was last read (defends against
-  redirects / injected navigation); **forced confirmation on purchase/delete-type
-  clicks** even in auto mode; and **prompt-injection flagging** of page content.
+  redirects / injected navigation); **forced confirmation on the click that
+  pays or places an order, and on delete-type clicks**, even in auto mode (the
+  steps before payment, like Checkout, go through so it can take an order up
+  to payment and hand it to you); and **prompt-injection flagging** of page content.
   Sensitive sites (banking, payments, crypto) always confirm per action.
 - **Smart checks (optional, beta)** — a second opinion from TypeSafe's Jev
   decision model where the built-in patterns are thin: confirm risky actions

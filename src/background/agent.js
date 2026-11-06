@@ -7,7 +7,7 @@
 import { callModel } from "./providers.js";
 import { TOOL_DEFS, executeTool, setOverlay, inReach } from "./tools.js";
 import { evaluate, stricter, MUTATING_TOOLS, PAGE_READ_TOOLS, FOCUS_TOOLS, originOf, hostOf, isSensitive, normalizeTarget } from "./permissions.js";
-import { detectInjection, isSensitiveActionText, looksLikeSecret, INJECTION_NOTE, PAYMENT_NOTE } from "./safety.js";
+import { detectInjection, isSensitiveActionText, benignOnPayment, looksLikeSecret, INJECTION_NOTE, PAYMENT_NOTE } from "./safety.js";
 import { parsePlan, planToText, hostFromDomain } from "./plan.js";
 import { touchesSensitiveSite } from "./sessions.js";
 import { pageContextNote, compactForModel, asksUser, mentionsConsequence, truncateForModel, CONTINUE_NUDGE, MAX_NUDGES } from "./context.js";
@@ -31,7 +31,7 @@ How to work:
 - Don't claim you can't do things you can (browse, open sites, read pages, fill forms). You may still decline or ask before anything risky; say why.
 - Take the smallest number of steps needed. Do not repeat an action that already succeeded.
 - If a page requires a login the user hasn't given you or a CAPTCHA, stop and ask the user to handle it — never attempt to bypass these.
-- When the user asks you to order or buy something, do the whole job up to payment: find the exact items, add them to the cart, fill in the delivery or pickup details they gave you, and go through the checkout steps. Stop at the payment step (the page that asks for card details, or has the final Pay or Place order button): tell the user what is in the order and the total, and ask them to review it and pay. Press the final pay or place-order button only if the user clearly asked you to complete the purchase; OpenSidekick will ask them to confirm.
+- When the user asks you to order or buy something, do the whole job up to payment: find the exact items, add them to the cart, fill in the delivery or pickup details they gave you, and go through the checkout steps. Stop at the payment step (the page that asks for card details or shows a saved card, or has the final Pay or Place order button): tell the user the site, what is in the order and the total, and ask them to review it and pay. Press the final pay or place-order button only if the user clearly asked you to complete the purchase, and first tell them the site, the items and the total. OpenSidekick asks before many such clicks, but not all of them.
 - When the task is done or you are blocked, call finish with a concise summary for the user.
 - If you need something only the user can give (a choice, missing details, a login), call ask_user. Don't use it to ask whether to continue. Small details that are easy to undo (a search term, a sort order, which result to open) you can choose yourself — say what you chose. Never choose who something goes to, what is bought, an amount, or a date or time for a booking: ask.
 
@@ -167,6 +167,9 @@ export async function runAgent(deps) {
   const lastFormSubmit = new Map(); // field ref -> its form's submit-button label, from the last read_page
   const lastFormPays = new Set(); // refs in a form that takes card details (submitting it pays)
   const lastSubmits = new Set(); // refs of buttons that submit their form
+  const lastButtons = new Set(); // refs of button-like elements
+  let lastPaymentStep = false; // the last read was the payment step
+  const lastLinks = new Map(); // ref -> where a link goes, from the last read_page
   let sentImage = false; // a screenshot has been added to the conversation
   let focusedTabId = initialTabId;
   let nudges = 0; // CONTINUE_NUDGE reminders sent this run
@@ -584,6 +587,9 @@ export async function runAgent(deps) {
           else if (lastSubmits.has(call.args?.ref) && lastFormPays.has(call.args?.ref)) {
             forceSensitive = true;
             actionWhy = "Submits a payment form";
+          } else if (lastPaymentStep && (lastButtons.has(call.args?.ref) || lastSubmits.has(call.args?.ref)) && !benignOnPayment(lastElements.get(call.args?.ref))) {
+            forceSensitive = true;
+            actionWhy = "On the payment step: this may place the order";
           }
         }
         // Enter or Space on an element activates it, and Enter or submit:true in
@@ -603,12 +609,15 @@ export async function runAgent(deps) {
           } else if (activates && lastFormPays.has(call.args.ref)) {
             forceSensitive = true;
             actionWhy = "Submits a payment form";
+          } else if (activates && lastPaymentStep && !benignOnPayment(elLabel)) {
+            forceSensitive = true;
+            actionWhy = "On the payment step: this may place the order";
           }
         }
         if (!gateReads && call.name === "type_text" && call.args?.submit && isSensitiveActionText(lastFormSubmit.get(call.args?.ref))) {
           forceSensitive = true;
           actionWhy = `Submits a form with the button \u201c${String(lastFormSubmit.get(call.args.ref)).slice(0, 60)}\u201d`;
-        } else if (!gateReads && call.name === "type_text" && call.args?.submit && lastFormPays.has(call.args?.ref)) {
+        } else if (!gateReads && call.name === "type_text" && call.args?.submit && (lastFormPays.has(call.args?.ref) || lastPaymentStep)) {
           forceSensitive = true;
           actionWhy = "Submits a payment form";
         }
@@ -675,7 +684,7 @@ export async function runAgent(deps) {
               key,
               await classifyAction(
                 dsrc,
-                { tool: call.name, url, title: pageTitle, label, userRequest },
+                { tool: call.name, url, title: pageTitle, label, userRequest, paymentStep: lastPaymentStep, link: lastLinks.get(call.args?.ref) || "" },
                 { breaker, emit, signal },
               ),
             );
@@ -756,11 +765,18 @@ export async function runAgent(deps) {
       let toolResult;
       try {
         ctx.secretConfirmed = secretConfirmed;
+        // The page must still show what the gate judged: refuse a ref whose
+        // label changed since the read (an SPA turning Continue into Pay).
+        const seen = runArgs && lastElements.has(runArgs.ref) && call.name !== "scroll" ? runArgs.ref : null;
+        ctx.expect = seen != null ? lastElements.get(seen) : undefined;
+        ctx.expectSubmits = seen != null ? lastSubmits.has(seen) : undefined;
         toolResult = await executeTool(call.name, runArgs, ctx);
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
       }
       ctx.secretConfirmed = false;
+      ctx.expect = undefined;
+      ctx.expectSubmits = undefined;
       if (hideForShot) await setOverlay(focusedTabId, "show", overlayLabel);
 
       // A tool that returns an image (screenshot) can't carry it in an OpenAI
@@ -797,15 +813,20 @@ export async function runAgent(deps) {
           lastFormSubmit.clear();
           lastFormPays.clear();
           lastSubmits.clear();
+          lastButtons.clear();
+          lastLinks.clear();
+          lastPaymentStep = !!toolResult.paymentStep;
           for (const el of toolResult.elements || []) {
+            if (el.tag === "button" || el.tag === "a" || el.role === "button" || (el.tag === "input" && /^(submit|button|image)$/i.test(el.type || ""))) lastButtons.add(el.ref);
             lastElements.set(el.ref, el.name || "");
+            if (el.tag === "a" && el.href) lastLinks.set(el.ref, String(el.href));
             if (el.secret) lastSecret.add(el.ref);
             if (el.formSubmit) lastFormSubmit.set(el.ref, el.formSubmit);
             if (el.formPays) lastFormPays.add(el.ref);
             if (el.submits) lastSubmits.add(el.ref);
           }
           // The payment step: hand the order over instead of paying.
-          if (toolResult.paymentStep) toolResult.payment_note = PAYMENT_NOTE;
+          if (toolResult.paymentStep) toolResult.payment_note = PAYMENT_NOTE.replace("{site}", hostOf(toolResult.url || "") || "this site");
         }
         // The user's selection rides on the first read of the page it came
         // from, so it is gated, scanned and compacted like any page content.

@@ -167,7 +167,7 @@ export const MAX_NUDGES = 2;
 
 // Safety fields and the user's selection are kept whole, outside the preview,
 // so a large page can't push them past the cut.
-const KEEP_WHOLE = ["suspected_injection", "injection_note", "user_selection", "error"];
+const KEEP_WHOLE = ["suspected_injection", "injection_note", "paymentStep", "payment_note", "user_selection", "error"];
 export function truncateForModel(result) {
   const s = JSON.stringify(result);
   if (s.length <= 12000) return result;

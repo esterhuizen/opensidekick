@@ -5,6 +5,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Orders go all the way to payment, then you pay.** Ask it to order a pizza
+  and it picks the items, fills in the pickup or delivery details you gave
+  and goes through the checkout steps without stopping for a card each time.
+  At the payment step it tells you the site, the items and the total, and you
+  review and pay. "Checkout", "Order now" and "Continue to payment" no longer
+  ask; the click that pays or places the order still does.
+
+### Security
+
+- **The payment step asks for every button.** On a page with card fields, a
+  card frame from a payment provider or a saved card ("Visa ending in 4242"),
+  any button except plainly harmless ones (Back, Edit, Apply, a tip) asks
+  first, and so does submitting a form that takes card details, whatever its
+  button says. "Book now", "Reserve now", pre-orders and 1-Click buys ask too.
+- A button that changes after the agent read the page (say, "Continue" turning
+  into "Pay") is not pressed until the agent reads the page again, and a
+  double click on a button is refused (it would press it twice).
+- A card number in a field labelled only through `aria-labelledby` is now
+  masked like any other card field.
+- Smart checks are told whether the page holds payment details, so a
+  "Continue" on a payment page still counts as risky.
+
 ## [0.6.1] — 2026-11-06
 
 ### Changed
