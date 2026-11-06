@@ -345,10 +345,10 @@ export async function classifyAction(src, params = {}, opts = {}) {
         risky: {
           type: "noul",
           instructions:
-            "Would performing this action likely be irreversible or high-consequence for the user: completing a purchase or payment, transferring money, deleting or destroying data, sending a message or email on their behalf, changing account or security settings, or submitting a legal or financial commitment?",
+            "Would this one action itself commit the user right now, in a way that is hard to undo: charging money or placing the final order, transferring money, deleting or destroying data, sending a message or email on their behalf, changing account or security settings, or submitting a legal or financial commitment? Steps that only move a shopping or booking flow to its next page (adding to a cart, opening the cart, Checkout, Finish order, Continue to delivery or to payment) are not commitments: the user still reviews and pays on a later page.",
           criteria: {
-            true: "The action commits, sends, pays, or destroys something, or is otherwise hard to undo.",
-            false: "The action is routine browsing, reading, searching, or filling a field.",
+            true: "This action itself pays, places the final order, sends, or destroys something, or is otherwise hard to undo.",
+            false: "The action is browsing, reading, searching, filling a field, or moving to the next step of a checkout before the final pay or place-order step.",
           },
         },
         severity: {

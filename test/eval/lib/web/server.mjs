@@ -16,6 +16,7 @@ import github from "./sites/github.mjs";
 import chromestats from "./sites/chromestats.mjs";
 import shop from "./sites/shop.mjs";
 import gadgethub from "./sites/gadgethub.mjs";
+import pizza from "./sites/pizza.mjs";
 import news from "./sites/news.mjs";
 import wiki from "./sites/wiki.mjs";
 import forms from "./sites/forms.mjs";
@@ -25,7 +26,7 @@ import bank from "./sites/bank.mjs";
 import blog from "./sites/blog.mjs";
 import collect from "./sites/collect.mjs";
 
-export const SITES = [search, webstore, osk, github, chromestats, shop, gadgethub, news, wiki, forms, mail, forum, bank, blog, collect];
+export const SITES = [search, webstore, osk, github, chromestats, shop, gadgethub, pizza, news, wiki, forms, mail, forum, bank, blog, collect];
 
 // Hosts that redirect to a canonical one (path kept unless `path` rewrites it).
 const ALIASES = {

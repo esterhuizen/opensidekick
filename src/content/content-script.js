@@ -58,6 +58,7 @@
   // ponytail: plain keyword match, no synonyms; add a model rerank if it misses.
   // Labels of a form's buttons, computed once per form per read.
   let formLabelCache = new WeakMap();
+  let formPaysCache = new WeakMap(); // form -> has a card field, per read
   // Every button whose form owner is this form, in tree order: <input type=image>
   // (left out of form.elements) and form= ones outside it too. Not form.elements,
   // which a control named "elements" shadows.
@@ -99,6 +100,7 @@
   function readPage(query) {
     formLabelCache = new WeakMap();
     formButtonMap = null;
+    formPaysCache = new WeakMap();
     refMap = new Map();
     refCounter = 0;
 
@@ -142,6 +144,7 @@
       title: document.title,
       summary: pageSummary(),
       elements,
+      ...(paymentStepOnPage() ? { paymentStep: true } : {}),
       note:
         elements.length >= MAX_ELEMENTS
           ? `Showing first ${MAX_ELEMENTS} interactive elements; scroll for more.`
@@ -179,6 +182,7 @@
       title: document.title,
       summary: pageSummary(),
       elements,
+      ...(paymentStepOnPage() ? { paymentStep: true } : {}),
       note: elements.length ? undefined : "No element matched; call read_page without a query.",
     };
   }
@@ -224,7 +228,47 @@
     }
     // Clicking it submits a form, whatever its label says.
     if (el.form && ((tag === "button" && el.type === "submit") || (tag === "input" && (el.type === "submit" || el.type === "image")))) out.submits = true;
+    // Its form takes card details: submitting it pays, whatever the button says.
+    const payForm = el.form || formOf;
+    if (payForm && formPays(payForm)) out.formPays = true;
     return out;
+  }
+
+  // A card-payment field: card number, security code, expiry or name on card.
+  const CARD_HINT_RE = /card.?(number|no\b|num\b)|cc.?(num|number)\b|credit.?card|debit.?card|\bcvv2?\b|\bcvc2?\b|\bcsc\b|name on (the )?card|card.?holder|expir(y|ation)/i;
+  function isCardField(el) {
+    const tag = el && el.localName;
+    if (tag !== "input") return false;
+    const auto = (el.getAttribute("autocomplete") || "").toLowerCase();
+    if (/\bcc-(number|csc|exp|exp-month|exp-year|name)\b/.test(auto)) return true;
+    const ids = [el.name, el.id].map((t) => String(t || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-$.[\]]+/g, " "));
+    const label = el.labels && el.labels[0];
+    return [...ids, el.placeholder, el.getAttribute("aria-label"), labelWords(label, true)].some((t) => t && CARD_HINT_RE.test(String(t)));
+  }
+  function formPays(form) {
+    if (formPaysCache.has(form)) return formPaysCache.get(form);
+    let pays = false;
+    try {
+      for (const c of document.querySelectorAll("input")) if (c.form === form && isCardField(c)) { pays = true; break; }
+    } catch {
+      /* ignore */
+    }
+    formPaysCache.set(form, pays);
+    return pays;
+  }
+  // The page asks for payment: a card field, or a card frame from a payment
+  // provider (Stripe, Braintree, Adyen…) whose fields the agent can't see.
+  function paymentStepOnPage() {
+    try {
+      for (const c of document.querySelectorAll("input")) if (isCardField(c) && isVisible(c)) return true;
+      for (const f of document.querySelectorAll("iframe")) {
+        const hay = [f.getAttribute("title"), f.getAttribute("name"), f.getAttribute("src")].join(" ");
+        if (/stripe|braintree|adyen|checkout\.com|card.?(number|details)|payment/i.test(hay) && isVisible(f)) return true;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
   }
 
   // A custom combobox usually keeps its popup list inside itself. The options

@@ -60,8 +60,14 @@ export function longDate(iso) {
   return new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
 
-// Bold titles of a release's "### Added" bullets (ver-whats-new ground truth).
+// Bold titles of a release's "### Added" bullets (ver-whats-new ground truth);
+// a release with no Added section (0.6.1) uses Changed, then Security, Fixed.
 export function addedTitles(body) {
-  const added = (body.split(/^### /m).find((s) => /^Added\b/.test(s)) || "");
-  return [...added.matchAll(/^- \*\*(.+?)\*\*/gm)].map((m) => m[1].replace(/`/g, "").replace(/[.]+$/, ""));
+  const sections = body.split(/^### /m);
+  for (const name of ["Added", "Changed", "Security", "Fixed"]) {
+    const sec = sections.find((s) => new RegExp("^" + name + "\\b").test(s)) || "";
+    const titles = [...sec.matchAll(/^- \*\*(.+?)\*\*/gm)].map((m) => m[1].replace(/`/g, "").replace(/[.:]+$/, ""));
+    if (titles.length) return titles;
+  }
+  return [];
 }

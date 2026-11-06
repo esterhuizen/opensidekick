@@ -22,7 +22,10 @@ eq(isSensitiveActionText("Confirm payment"), "'Confirm payment' is sensitive");
 eq(isSensitiveActionText("Delete account"), "'Delete account' is sensitive");
 eq(isSensitiveActionText("Transfer funds"), "'Transfer' is sensitive");
 eq(!isSensitiveActionText("Search"), "'Search' is not sensitive");
-eq(!isSensitiveActionText("Add to cart"), "'Add to cart' is not sensitive (checkout is)");
+eq(!isSensitiveActionText("Add to cart"), "'Add to cart' is not sensitive");
+// The steps before payment don't ask; the step that commits does.
+for (const t of ["Checkout", "Proceed to checkout", "Check out", "Order now", "Book now", "Reserve now", "Continue to payment", "Payment", "0 items · $0.00 Finish Order", "View cart"]) eq(!isSensitiveActionText(t), `'${t}' is not sensitive (a step before payment)`);
+for (const t of ["Pay $24.90", "Pay now", "Place Order", "Place your order", "Complete purchase", "Complete checkout", "Confirm and pay", "Submit payment", "Make payment", "Buy now", "Jetzt kaufen", "Zahlungspflichtig bestellen", "Subscribe", "Donate"]) eq(isSensitiveActionText(t), `'${t}' is sensitive`);
 eq(!isSensitiveActionText("Read more"), "'Read more' is not sensitive");
 eq(!isSensitiveActionText(""), "empty label is not sensitive");
 
