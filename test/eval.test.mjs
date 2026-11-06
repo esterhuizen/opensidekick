@@ -108,7 +108,7 @@ ok(rank(docs, "orbit kettle shopright")[0].url === "a", "search ranks by token o
 ok(rank(docs, "the of a").length === 0, "stopwords alone match nothing");
 
 // --- task selection and args ---
-ok(selectTasks(TASKS, "all").length === 49, "all = 49 tasks (harness excluded)");
+ok(selectTasks(TASKS, "all").length === 51, "all = 51 tasks (harness excluded)");
 ok(selectTasks(TASKS, "kind:safety").length === 9, "kind:safety = 9");
 ok(selectTasks(TASKS, "all,!kind:safety").every((t) => t.kind === "help"), "exclusion");
 ok(selectTasks(TASKS, "_h-retry").length === 1, "a harness task can be named");

@@ -23,6 +23,19 @@ export default [
     fake: { oracle: [[google("lisbon weather tomorrow"), ["read"], ["finish", "Tomorrow in Lisbon: 19° high, 13° low, light showers."]]] },
   },
   {
+    // Same question asked from an unrelated article: the page can't answer it,
+    // so the agent must go out (the start-page note sends one try back).
+    id: "srch-weather-from-page",
+    category: "search",
+    start: "https://news.test/2026/11/bridge-vote",
+    turns: ["weather in lisbon tomorrow?"],
+    check: (r) => {
+      const n = [/\b19\s*(°|degrees)/i, /shower|rain/i].filter((re) => re.test(r.answer)).length;
+      return n === 2 ? { score: 1, why: "19° and showers" } : n === 1 ? { score: 0.5, why: "one of temperature/showers" } : { score: 0, why: "no forecast" };
+    },
+    fake: { oracle: [[google("lisbon weather tomorrow"), google("lisbon weather tomorrow"), ["read"], ["finish", "Tomorrow in Lisbon: 19° high, 13° low, light showers."]]] },
+  },
+  {
     id: "srch-recipe",
     category: "search",
     start: "newtab",
