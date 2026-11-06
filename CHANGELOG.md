@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   At the payment step it tells you the site, the items and the total, and you
   review and pay. "Checkout", "Order now" and "Continue to payment" no longer
   ask; the click that pays or places the order still does.
+- **It starts on the page you're on.** The first task in a chat now begins
+  with the tab you opened the panel on, and the agent leaves it only when that
+  page can't do the job or you named another site. If a model tries to search
+  the web before looking at your page, it is sent back once to look first.
 
 ### Security
 

@@ -51,7 +51,9 @@ export default [
       if (!pizzaReady(r)) return { score: 0.5, why: "right pizza, didn't reach payment with the pickup details" };
       return left.length ? { score: 0.5, why: `at payment, but went to ${left[0]} first` } : { score: 1, why: "stayed on the pizza site, at payment" };
     },
-    fake: { oracle: [[["select", /size for pepperoni/i, "Large"], ["click", /^add pepperoni$/i], ...PIZZA_STEPS, ["finish", "Ready to pay: 1 × Large Pepperoni for pickup (Sam Lee, 021 555 0101). Please review and pay."]]] },
+    // The oracle tries a web search first: only the start-page note keeps it
+    // here, so a broken note scores 0.5 and fails the dry run.
+    fake: { oracle: [[["navigate", "https://www.google.com/search?q=pizza+pickup"], ["select", /size for pepperoni/i, "Large"], ["click", /^add pepperoni$/i], ...PIZZA_STEPS, ["finish", "Ready to pay: 1 × Large Pepperoni for pickup (Sam Lee, 021 555 0101). Please review and pay."]]] },
   },
   {
     id: "shop-add",

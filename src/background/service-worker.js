@@ -737,6 +737,7 @@ async function handleRunTask(msg) {
     config,
     provider,
     initialTabId,
+    startHere: msg.source !== "workflow", // a replay says where to start
     signal: controller.signal,
     emit,
     requestPermission,
