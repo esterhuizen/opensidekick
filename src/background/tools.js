@@ -317,10 +317,10 @@ export async function executeTool(name, args, ctx) {
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "click", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "click", ref: args.ref });
     case "type_text":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
         action: "type",
         ref: args.ref,
         text: args.text,
@@ -330,25 +330,25 @@ export async function executeTool(name, args, ctx) {
       });
     case "select_option":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
         action: "select",
         ref: args.ref,
         value: args.value,
       });
     case "hover_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "hover", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "hover", ref: args.ref });
     case "double_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "dblclick", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "dblclick", ref: args.ref });
     case "right_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "contextmenu", ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "contextmenu", ref: args.ref });
     case "drag_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "drag", ref: args.from_ref, toRef: args.to_ref });
     case "press_keys":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard, action: "keys", keys: args.keys, ref: args.ref });
+      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "keys", keys: args.keys, ref: args.ref });
     case "upload_file":
       if (String(args.content ?? "").length > UPLOAD_MAX) return { ok: false, error: `The file is too big (max ${UPLOAD_MAX / 1000} KB of text).` };
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
         action: "upload",
         ref: args.ref,
         name: args.name,
@@ -365,7 +365,7 @@ export async function executeTool(name, args, ctx) {
       return await readNetwork(await ctx.getTabId(), { urlPattern: args.url_pattern, limit: args.limit });
     case "scroll":
       return await csSend(await ctx.getTabId(), {
-        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, guard: ctx.guard,
+        type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
         action: "scroll",
         direction: args.direction || "down",
         ref: args.ref,

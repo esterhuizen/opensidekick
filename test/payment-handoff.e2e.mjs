@@ -81,6 +81,14 @@ for (const label of ["Book now", "Reserve now", "Pre-order now with 1-Click"]) {
   r = await run(`<h1>Table</h1><button ${STEP}>${label}</button>`, () => ["click_element", { ref: refOf(/./) }]);
   ok(r.cards.length === 1 && r.stepped === 0, `"${label}": asks (cards=${r.cards.length})`);
 }
+// Round-2 audit shapes: the brand on its own line, a saved card outside
+// <main>, a role=link "Continue".
+r = await run(`<main><h1>Review</h1></main><aside><div>Visa</div><div>&bull;&bull;&bull;&bull; 4242</div></aside><div role="button" tabindex="0" onclick="window.__ordered=(window.__ordered||0)+1">Order now</div>`, () => ["click_element", { ref: refOf(/Order now/) }]);
+ok(r.cards.length === 1 && r.ordered === 0, `saved card outside main + "Order now": asks (cards=${r.cards.length} ordered=${r.ordered})`);
+r = await run(`<h1>Review</h1><p>Mastercard ending in 4444</p><span role="link" tabindex="0" onclick="window.__ordered=(window.__ordered||0)+1">Continue</span>`, () => ["click_element", { ref: refOf(/Continue/) }]);
+ok(r.cards.length === 1 && r.ordered === 0, `saved card + role=link "Continue": asks (cards=${r.cards.length} ordered=${r.ordered})`);
+r = await run(`<h1>Menu</h1><p>Open 2024–2026. Call 0800 123 4567.</p><button ${STEP}>Continue</button>`, () => ["click_element", { ref: refOf(/Continue/) }]);
+ok(r.cards.length === 0 && r.stepped === 1 && !lastRead.paymentStep, `years and phone numbers aren't a saved card (cards=${r.cards.length})`);
 // A button that turns into "Pay" after the read: the second click on the same
 // ref is refused because the label changed; a double click on a button is too.
 const MORPH = `<h1>Basket</h1><button id="b" onclick="if(this.dataset.armed){window.__ordered=(window.__ordered||0)+1}else{this.dataset.armed=1;this.textContent='Pay $24.90'}">Continue to payment</button>`;

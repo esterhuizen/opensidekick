@@ -770,6 +770,7 @@ export async function runAgent(deps) {
         const seen = runArgs && lastElements.has(runArgs.ref) && call.name !== "scroll" ? runArgs.ref : null;
         ctx.expect = seen != null ? lastElements.get(seen) : undefined;
         ctx.expectSubmits = seen != null ? lastSubmits.has(seen) : undefined;
+        ctx.expectPaymentStep = seen != null ? lastPaymentStep : undefined;
         toolResult = await executeTool(call.name, runArgs, ctx);
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
@@ -777,6 +778,7 @@ export async function runAgent(deps) {
       ctx.secretConfirmed = false;
       ctx.expect = undefined;
       ctx.expectSubmits = undefined;
+      ctx.expectPaymentStep = undefined;
       if (hideForShot) await setOverlay(focusedTabId, "show", overlayLabel);
 
       // A tool that returns an image (screenshot) can't carry it in an OpenAI
@@ -817,7 +819,7 @@ export async function runAgent(deps) {
           lastLinks.clear();
           lastPaymentStep = !!toolResult.paymentStep;
           for (const el of toolResult.elements || []) {
-            if (el.tag === "button" || el.tag === "a" || el.role === "button" || (el.tag === "input" && /^(submit|button|image)$/i.test(el.type || ""))) lastButtons.add(el.ref);
+            if (el.tag === "button" || el.tag === "a" || /^(button|link|menuitem)$/i.test(el.role || "") || (el.tag === "input" && /^(submit|button|image)$/i.test(el.type || ""))) lastButtons.add(el.ref);
             lastElements.set(el.ref, el.name || "");
             if (el.tag === "a" && el.href) lastLinks.set(el.ref, String(el.href));
             if (el.secret) lastSecret.add(el.ref);
@@ -826,7 +828,7 @@ export async function runAgent(deps) {
             if (el.submits) lastSubmits.add(el.ref);
           }
           // The payment step: hand the order over instead of paying.
-          if (toolResult.paymentStep) toolResult.payment_note = PAYMENT_NOTE.replace("{site}", hostOf(toolResult.url || "") || "this site");
+          if (toolResult.paymentStep) toolResult.payment_note = PAYMENT_NOTE.replaceAll("{site}", hostOf(toolResult.url || "") || "this site");
         }
         // The user's selection rides on the first read of the page it came
         // from, so it is gated, scanned and compacted like any page content.

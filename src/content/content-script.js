@@ -230,6 +230,8 @@
     }
     // Clicking it submits a form, whatever its label says.
     if (el.form && ((tag === "button" && el.type === "submit") || (tag === "input" && (el.type === "submit" || el.type === "image")))) out.submits = true;
+    // A <label for> over a submit button presses it.
+    if (tag === "label" && el.control && el.control.form && ((el.control.localName === "button" && el.control.type === "submit") || (el.control.localName === "input" && /^(submit|image)$/i.test(el.control.type)))) out.submits = true;
     // Its form takes card details: submitting it pays, whatever the button says.
     const payForm = el.form || formOf;
     if (payForm && formPays(payForm)) out.formPays = true;
@@ -284,18 +286,24 @@
   }
   // The page asks for payment: a card field, or a card frame from a payment
   // provider (Stripe, Braintree, Adyen…) whose fields the agent can't see.
-  const SAVED_PM_RE = /\b(?:visa|master\s?card|amex|american express|discover|maestro|card|debit|credit)\b[^\n]{0,30}?(?:ending(?:\s+in)?|[\u2022*\u00b7]{2,}|\.{3})\s*\d{4}\b|[\u2022*]{4}\s?\d{4}\b/i;
+  // A brand (or "card", "account") near the last four digits, on the same or
+  // the next line (the brand is often its own element, or a logo).
+  const SAVED_PM_RE = /\b(?:visa|master\s?card|amex|american express|discover|maestro|jcb|diners|union\s?pay|card|debit|credit|bank|account|checking|savings)\b[\s\S]{0,40}?(?:ending(?:\s+in)?|[\u2022*\u00b7]+|\.{3}|\u2026|\bx-?)\s*(?!20[2-3]\d\b)\d{4}\b|[\u2022*]{4}\s?\d{4}\b|\bending\s+in\s+(?!20[2-3]\d\b)\d{4}\b/i;
   // Card-entry frames only: Stripe, Square, Braintree, Adyen... also render
   // buttons, address and pay-later frames on carts and product pages.
   const CARD_FRAME_RE = /\b(?:card|cvc|cvv|csc|expir\w*|security code)\b|card.?(?:number|details)|payment input|hosted.?field|checkout-frames/i;
   const NOT_CARD_FRAME_RE = /button|express|messaging|address|link authentication|payment.?request/i;
   function paymentStepOnPage() {
     try {
-      if (SAVED_PM_RE.test(pageText())) return true;
+      // The whole page, not pageText(): a saved card can sit outside <main> or past its cut.
+      if (document.body && SAVED_PM_RE.test(document.body.innerText || "")) return true;
       for (const c of document.querySelectorAll("input")) if (isCardField(c) && isVisible(c)) return true;
       for (const f of document.querySelectorAll("iframe")) {
-        const hay = [f.getAttribute("title"), f.getAttribute("name"), f.getAttribute("src")].join(" ");
-        if (CARD_FRAME_RE.test(hay) && !NOT_CARD_FRAME_RE.test(hay) && isVisible(f)) return true;
+        // The src without its query or fragment: Stripe puts the shop's own URL
+        // there (referrer=...), and a shop called "...express..." is no button.
+        const src = String(f.getAttribute("src") || "").split(/[?#]/)[0];
+        const hay = [f.getAttribute("title"), f.getAttribute("name"), src].join(" ");
+        if ((CARD_FRAME_RE.test(hay) || /elements-inner-(?:card|payment)-[0-9a-f]/i.test(src)) && !NOT_CARD_FRAME_RE.test(hay) && isVisible(f)) return true;
       }
     } catch {
       /* ignore */
@@ -414,6 +422,11 @@
     if ((msg.expect != null && (now.name || "") !== msg.expect) || (msg.expectSubmits != null && !!now.submits !== msg.expectSubmits)) {
       return { ok: false, error: `Element ${msg.ref} has changed since you read the page. Call read_page again.` };
     }
+    // The caller judged this on a page that wasn't the payment step: if it is
+    // now (a saved card rendered late, or an SPA moved on), read it again first.
+    if (msg.expectPaymentStep === false && (msg.action === "click" || msg.action === "dblclick" || msg.action === "keys" || (msg.action === "type" && msg.submit)) && paymentStepOnPage()) {
+      return { ok: false, error: `The page now asks for or shows payment details. Call read_page again before acting.` };
+    }
     try {
       el.scrollIntoView({ block: "center", inline: "center" });
     } catch {
@@ -462,8 +475,8 @@
     // A double click presses a button twice: the second press may be a Pay the
     // first one revealed, or a second order. Buttons take click_element.
     const tag = el.localName;
-    if (tag === "button" || el.getAttribute("role") === "button" || (tag === "input" && /^(submit|button|image|reset)$/i.test(el.type))) {
-      return { ok: false, error: "That is a button: use click_element. A double click would press it twice." };
+    if (tag === "button" || tag === "a" || /^(button|link|menuitem)$/i.test(el.getAttribute("role") || "") || (tag === "input" && /^(submit|button|image|reset)$/i.test(el.type))) {
+      return { ok: false, error: "That is a button or link: use click_element. A double click would press it twice." };
     }
     click(el);
     click(el);

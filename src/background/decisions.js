@@ -334,7 +334,8 @@ export async function classifyAction(src, params = {}, opts = {}) {
       ["Page title", clip(title, ACTION_FIELD_LIMITS.title)],
       ["Target", clip(label, ACTION_FIELD_LIMITS.label)],
       ["Target is a link to", clip(link, ACTION_FIELD_LIMITS.url)],
-      ["Page asks for or shows payment details", paymentStep === true ? "yes" : paymentStep === false ? "no" : ""],
+      // Only "yes": a "no" from the heuristic can be wrong (cash, PayPal, a saved card it missed).
+      ["Page asks for or shows payment details", paymentStep === true ? "yes" : ""],
     ]
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}: ${v}`)
