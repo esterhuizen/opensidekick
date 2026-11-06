@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-11-06
+
 ### Changed
 
 - **The agent gets things done.** It searches and opens sites itself when the
