@@ -77,7 +77,7 @@ try {
   const leak = JSON.stringify(read.elements || []);
   ok(!/OldWifi-Secret-1|4111 1111|S3cret-TA-1|S3cret-CB-1/.test(leak), "a prefilled secret's value is not in the read (not as its name either)");
   const btns = (read.elements || []).filter((e) => e.tag === "button").map((e) => e.name);
-  const want = ["Delete account", "Pay now", "Delete account", "delete", "Delete trash", "Delete", "$49 Buy now"];
+  const want = ["Delete account", "Pay now", "Delete account", "delete", "trash Delete", "Delete", "$49 Buy now"];
   ok(JSON.stringify(btns) === JSON.stringify(want), `icon-only and value buttons are named (got ${JSON.stringify(btns)})`);
 
   // Show-password toggle after the read: still secret on the next read.

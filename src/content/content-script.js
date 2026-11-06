@@ -290,7 +290,7 @@
     // No words: join every source, so no single one (title="More", an icon
     // alt="trash", a ✕) hides "Delete" in another.
     const value = tag === "button" || tag === "input" ? el.getAttribute("value") : "";
-    const parts = [el.getAttribute("title"), el.getAttribute("alt"), icons, value, el.getAttribute("placeholder")].map((t) => (t || "").trim()).filter(Boolean);
+    const parts = [icons, el.getAttribute("title"), el.getAttribute("alt"), value, el.getAttribute("placeholder")].map((t) => (t || "").trim()).filter(Boolean);
     return [...new Set(parts)].join(" ") || text;
   }
 
