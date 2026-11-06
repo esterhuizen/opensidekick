@@ -58,16 +58,24 @@
   // ponytail: plain keyword match, no synonyms; add a model rerank if it misses.
   // Labels of a form's buttons, computed once per form per read.
   let formLabelCache = new WeakMap();
+  // Every button whose form owner is this form, in tree order: <input type=image>
+  // (left out of form.elements) and form= ones outside it too. Not form.elements,
+  // which a control named "elements" shadows.
+  function formButtons(form) {
+    return Array.from(document.querySelectorAll("button,input")).filter(
+      (c) => c.form === form && (c.tagName === "BUTTON" || /^(submit|image|button)$/i.test(c.type)),
+    );
+  }
   function formButtonLabels(form) {
     if (formLabelCache.has(form)) return formLabelCache.get(form);
+    const btns = formButtons(form);
+    const dflt = btns.find((c) => c.type === "submit" || c.type === "image");
     const names = [];
-    for (const c of Array.from(form.elements || [])) {
-      const t = c.tagName ? c.tagName.toLowerCase() : "";
-      if (t === "button" || (t === "input" && /^(submit|image|button)$/i.test(c.type))) {
-        const n = accessibleName(c);
-        if (n && !names.includes(n)) names.push(n.slice(0, 60));
-        if (names.length >= 4) break;
-      }
+    for (const c of dflt ? [dflt, ...btns.filter((b) => b !== dflt)] : btns) {
+      const n = accessibleName(c).slice(0, 80);
+      if (n && !names.includes(n)) names.push(n);
+      // The default button comes first, so a cap can't push it out.
+      if (names.length >= 8) break;
     }
     const out = names.join(" / ");
     formLabelCache.set(form, out);
@@ -238,11 +246,18 @@
     if (closestLabel) return closestLabel.textContent.trim();
     const text = (textOf(el) || "").trim().replace(/\s+/g, " ");
     if (text) return text;
+    // An icon-only button: <button><img alt="Delete"></button>.
+    const icon = el.querySelector && el.querySelector("img[alt],svg[aria-label],[role=img][aria-label]");
+    const iconName = icon ? icon.getAttribute("aria-label") || icon.getAttribute("alt") || "" : "";
+    // A value attribute names only a button; on a field it is the field's
+    // contents (an autofilled or prefilled password, say).
+    const isButtonInput = el.tagName === "INPUT" && /^(submit|button|reset|image)$/i.test(el.type);
     return (
       el.getAttribute("placeholder") ||
       el.getAttribute("title") ||
       el.getAttribute("alt") ||
-      el.getAttribute("value") ||
+      iconName ||
+      (isButtonInput ? el.getAttribute("value") : "") ||
       ""
     ).trim();
   }
@@ -464,12 +479,14 @@
   const NEGATION_RE = /\b(never|don'?t|do not)\b/i;
   const hintIn = (t) => STRONG_HINT_RE.test(t) || (WEAK_HINT_RE.test(t) && !CONTEXT_RE.test(t));
   // A label's own words, without links or buttons inside it ("Forgot password?").
-  function labelWords(label) {
+  // all=false drops only links about a reset or coupon, so "Show password"
+  // still counts; all=true drops every link ("CVV <a>Where is it?</a>").
+  function labelWords(label, all) {
     if (!label) return "";
     try {
       const c = label.cloneNode(true);
       for (const x of c.querySelectorAll("input,select,textarea")) x.remove();
-      for (const x of c.querySelectorAll("a,button")) if (CONTEXT_RE.test(x.textContent || "")) x.remove();
+      for (const x of c.querySelectorAll("a,button")) if (all || CONTEXT_RE.test(x.textContent || "")) x.remove();
       return c.textContent || "";
     } catch {
       return label.textContent || "";
@@ -493,7 +510,8 @@
     let named = [...ids, ...split].some((t) => t && (STRONG_HINT_RE.test(t) || WEAK_HINT_RE.test(t)));
     // Free-text labels on single-line inputs that aren't search, email or url.
     if (!named && tag === "input" && !/^(search|email|url)$/i.test(el.type)) {
-      const free = [el.placeholder, el.getAttribute("aria-label"), el.labels && el.labels[0] ? labelWords(el.labels[0]) : ""]
+      const label = el.labels && el.labels[0];
+      const free = [el.placeholder, el.getAttribute("aria-label"), labelWords(label, false), labelWords(label, true)]
         .map((t) => String(t || "").replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ").trim())
         .filter((t) => t && t.length <= 60);
       named = free.some((t) => {
@@ -527,16 +545,18 @@
     }
     if (submit) {
       const key = { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13, which: 13 };
-      const handled = !el.dispatchEvent(new KeyboardEvent("keydown", key));
+      let handled = !el.dispatchEvent(new KeyboardEvent("keydown", key));
+      if (!handled) handled = !el.dispatchEvent(new KeyboardEvent("keypress", { ...key, charCode: 13 }));
       el.dispatchEvent(new KeyboardEvent("keyup", key));
       const form = el.form || el.closest("form");
-      // A page that handled Enter itself has submitted already; otherwise
-      // submit like Enter does, through the form's default button.
+      // Like Enter: click the default button (its click handlers run; a disabled
+      // one does nothing), else submit the form itself.
       if (form && !handled) {
-        const dflt = Array.from(form.elements || []).find((c) => c.type === "submit" || c.type === "image") || null;
+        const dflt = formButtons(form).find((c) => c.type === "submit" || c.type === "image");
         try {
-          if (typeof form.requestSubmit === "function") form.requestSubmit(dflt && dflt.form === form ? dflt : undefined);
-          else form.submit();
+          if (dflt) {
+            if (!dflt.disabled) dflt.click();
+          } else HTMLFormElement.prototype.requestSubmit.call(form);
         } catch {
           /* ignore */
         }

@@ -18,6 +18,13 @@ const CASES = {
   emptyType: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="">Place order</button></form>`,
   contentEditable: `<form id="co" ${ORDER}><div contenteditable="true" id="note" aria-label="Gift note" style="min-height:20px;border:1px solid"></div><button type="submit">Place order</button></form>`,
   textarea: `<form id="co" ${ORDER}><label for="note">Gift note</label><textarea id="note" name="note"></textarea><button type="submit">Place order</button></form>`,
+  // Round-6 audit shapes: many other buttons, long duplicates, an image
+  // button (not in form.elements), a control named "elements".
+  imageOnly: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><input type="image" alt="Place order" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" style="width:20px;height:20px"></form>`,
+  nineButtons: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note">` + Array.from({ length: 9 }, (_, i) => `<button type="button">Change quantity ${i}</button>`).join("") + `<button type="submit">Place order</button></form>`,
+  dupLong: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note">` + `<button type="button">Remove this item from your basket and save it for later instead, please</button>`.repeat(4) + `<button type="submit">Place order</button></form>`,
+  clobberElements: `<form id="co" ${ORDER}><input type="hidden" name="elements" value="x"><label for="note">Gift note</label><input id="note" name="note"><button type="submit">Place order</button></form>`,
+  iconButton: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit"><img alt="Place order" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></form>`,
   badFormAttr: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note" form="nope"><button type="submit">Place order</button></form>`,
 };
 const browser = await chromium.launch({ args: ["--host-resolver-rules=MAP * ~NOTFOUND"] });
@@ -53,6 +60,24 @@ for (const [name, html] of Object.entries(CASES)) {
     console.log(`${(name + " " + tool).padEnd(28)} formSubmit=${JSON.stringify(fsLabel)} cards=${cards.length}${cards.length ? JSON.stringify(cards[0]) : ""} acted=${JSON.stringify(log)} ordered=${ordered}${ordered && !cards.length ? "   <-- ORDER WITHOUT CARD" : ""}`);
     if (ordered || !cards.length) __bad++;
   }
+}
+// An approved submit must still act like a real Enter: a page that blocks
+// Enter, or a disabled or cancelling default button, gets no submission.
+const GUARDS = {
+  keypressGuard: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note" onkeypress="if(event.key==='Enter')event.preventDefault()"><button type="submit">Save note</button></form>`,
+  disabledDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" disabled>Save note</button></form>`,
+  clickCancels: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" onclick="event.preventDefault()">Save note</button></form>`,
+};
+for (const [name, html] of Object.entries(GUARDS)) {
+  HTML = html; lastRead = [];
+  await page.goto("https://shop.test/co");
+  await page.evaluate(() => { window.chrome = { runtime: { onMessage: { addListener(fn) { window.__cs = fn; } }, sendMessage() {}, id: "t" } }; });
+  await page.addScriptTag({ content: cs });
+  await chrome.tabs.sendMessage(7, { type: "cs_read_page" });
+  const res = await chrome.tabs.sendMessage(7, { type: "cs_act", action: "type", ref: noteRef(), text: "hi", submit: true });
+  const ordered = await page.evaluate(() => window.__ordered || 0);
+  console.log(`${name.padEnd(28)} ok=${res.ok} ordered=${ordered}${ordered ? "   <-- SUBMITTED ANYWAY" : ""}`);
+  if (ordered || !res.ok) __bad++;
 }
 await browser.close();
 console.log(__bad ? `\n${__bad} FORM-SUBMIT CASE(S) FAILED` : "\nALL FORM-SUBMIT CHECKS PASSED");

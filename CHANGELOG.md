@@ -39,7 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   button, and typing with submit (or pressing Enter) in a form that has a
   "Place order"-like button, now ask too, and the card says what it confirms.
   These checks read the button labels the agent last saw, so a page that
-  relabels a button after the read can still slip past them.
+  relabels a button after the read can still slip past them. Typing with
+  submit now acts like a real Enter press: a page that blocks Enter, or a
+  disabled default button, means nothing is submitted.
+- Buttons that show only an icon (`<button><img alt="Delete">`) are now named,
+  so the Buy/Pay/Delete check sees them. A password or card field that the
+  site filled in no longer shows its value as the field's name.
 - The workflow recorder no longer saves what you type into fields it
   recognises as card or code fields.
 
