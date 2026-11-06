@@ -24,6 +24,7 @@ const CASES = {
   nineButtons: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note">` + Array.from({ length: 9 }, (_, i) => `<button type="button">Change quantity ${i}</button>`).join("") + `<button type="submit">Place order</button></form>`,
   dupLong: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note">` + `<button type="button">Remove this item from your basket and save it for later instead, please</button>`.repeat(4) + `<button type="submit">Place order</button></form>`,
   clobberElements: `<form id="co" ${ORDER}><input type="hidden" name="elements" value="x"><label for="note">Gift note</label><input id="note" name="note"><button type="submit">Place order</button></form>`,
+  titleIcon: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" title="Place order"><img alt="cart" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></form>`,
   iconButton: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit"><img alt="Place order" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></form>`,
   badFormAttr: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note" form="nope"><button type="submit">Place order</button></form>`,
 };
@@ -68,6 +69,8 @@ const GUARDS = {
   disabledDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" disabled>Save note</button></form>`,
   normal: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit">Save note</button></form>`,
   imageDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><input type="image" alt="Save note" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></form>`,
+  titleDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" title="Save note"><img alt="disk" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></form>`,
+  shadowListener: `<form id="co" ${ORDER}><input type="hidden" name="removeEventListener"><input type="hidden" name="addEventListener"><label for="note">Gift note</label><input id="note" name="note"><button type="submit">Save note</button></form>`,
   clickCancels: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" onclick="event.preventDefault()">Save note</button></form>`,
 };
 for (const [name, html] of Object.entries(GUARDS)) {
@@ -79,7 +82,7 @@ for (const [name, html] of Object.entries(GUARDS)) {
   const res = await chrome.tabs.sendMessage(7, { type: "cs_act", action: "type", ref: noteRef(), text: "hi", submit: true });
   const ordered = await page.evaluate(() => window.__ordered || 0);
   // The two control rows must submit exactly once; the guards never.
-  const want = name === "normal" || name === "imageDefault" ? 1 : 0;
+  const want = /^(normal|imageDefault|titleDefault|shadowListener)$/.test(name) ? 1 : 0;
   console.log(`${name.padEnd(28)} ok=${res.ok} submitted=${res.submitted} ordered=${ordered}${ordered !== want ? `   <-- WANTED ${want}` : ""}`);
   if (ordered !== want || !res.ok || res.submitted !== (want === 1)) __bad++;
 }

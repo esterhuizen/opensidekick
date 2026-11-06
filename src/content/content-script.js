@@ -236,6 +236,7 @@
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const popup = node.parentElement.closest("[role=listbox],[role=option]");
       if (popup && popup !== el && el.contains(popup)) continue;
+      if (node.parentElement.closest("textarea")) continue; // a field's value, not text
       text += node.data;
     }
     return text.trim().replace(/\s+/g, " ");
@@ -278,19 +279,19 @@
           .join(" ")
           .slice(0, 120)
       : "";
-    if (text && (/[\p{L}\p{N}]/u.test(text) || !icons)) return text;
+    // Real words win, with any icon labels they don't already say
+    // (<button><img alt="Buy now"> $49</button>).
+    if (text && /[\p{L}\p{N}]/u.test(text)) return icons && !text.includes(icons) ? `${text} ${icons}` : text;
+    const tag = el.localName; // tagName is lower-case in XHTML pages
     // A field's value attribute is its contents (an autofilled or prefilled
-    // password, say), never its name; on a button it is the label.
-    const isField = el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(submit|button|reset|image)$/i.test(el.type));
-    return (
-      icons ||
-      el.getAttribute("placeholder") ||
-      el.getAttribute("title") ||
-      el.getAttribute("alt") ||
-      (isField ? "" : el.getAttribute("value")) ||
-      text ||
-      ""
-    ).trim();
+    // password, say), never its name.
+    const isField = tag === "textarea" || (tag === "input" && !/^(submit|button|reset|image)$/i.test(el.type));
+    if (isField) return (el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("alt") || "").trim();
+    // No words: join every source, so no single one (title="More", an icon
+    // alt="trash", a ✕) hides "Delete" in another.
+    const value = tag === "button" || tag === "input" ? el.getAttribute("value") : "";
+    const parts = [el.getAttribute("title"), el.getAttribute("alt"), icons, value, el.getAttribute("placeholder")].map((t) => (t || "").trim()).filter(Boolean);
+    return [...new Set(parts)].join(" ") || text;
   }
 
   function pageSummary() {
@@ -587,15 +588,17 @@
         const dflt = formButtons(form).find((c) => c.type === "submit" || c.type === "image");
         // Report a submission only if the form really fired one.
         const seen = () => (submitted = true);
-        form.addEventListener("submit", seen, true);
+        // Through the prototype: a control named addEventListener shadows it.
+        EventTarget.prototype.addEventListener.call(form, "submit", seen, true);
         try {
           if (dflt) {
             if (!dflt.matches(":disabled")) dflt.click();
           } else HTMLFormElement.prototype.requestSubmit.call(form);
         } catch {
           /* ignore */
+        } finally {
+          EventTarget.prototype.removeEventListener.call(form, "submit", seen, true);
         }
-        form.removeEventListener("submit", seen, true);
       }
     }
     const out = { ok: true, typed: isSecretField(el) ? "(hidden)" : text.slice(0, 80), submitted };

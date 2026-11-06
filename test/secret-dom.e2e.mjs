@@ -60,7 +60,7 @@ const CASES = [
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
-  await page.setContent(`<!doctype html><body>${CASES.map(([, h]) => `<div>${h}</div>`).join("\n")}<button><img alt="Delete account" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button><button><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><svg aria-label="Pay now"></svg></button><button><span role="img" aria-label="Delete account">🗑️</span></button><button name="op" value="delete"><svg></svg></button></body>`);
+  await page.setContent(`<!doctype html><body>${CASES.map(([, h]) => `<div>${h}</div>`).join("\n")}<button><img alt="Delete account" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button><button><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><svg aria-label="Pay now"></svg></button><button><span role="img" aria-label="Delete account">🗑️</span></button><button name="op" value="delete"><svg></svg></button><button title="Delete"><img alt="trash" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button><button title="Delete">🗑️</button><button><img alt="Buy now" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> $49</button><div role="combobox"><textarea name="password">S3cret-CB-1</textarea></div></body>`);
   await page.evaluate(() => {
     window.chrome = { runtime: { onMessage: { addListener(fn) { window.__cs = fn; } }, sendMessage() {}, id: "test" } };
   });
@@ -75,9 +75,9 @@ try {
   for (const [id, , want] of CASES) ok(!!(el[id] && el[id].secret) === want, `${id}: ${want ? "secret" : "plain"}`);
 
   const leak = JSON.stringify(read.elements || []);
-  ok(!/OldWifi-Secret-1|4111 1111|S3cret-TA-1/.test(leak), "a prefilled secret's value is not in the read (not as its name either)");
+  ok(!/OldWifi-Secret-1|4111 1111|S3cret-TA-1|S3cret-CB-1/.test(leak), "a prefilled secret's value is not in the read (not as its name either)");
   const btns = (read.elements || []).filter((e) => e.tag === "button").map((e) => e.name);
-  const want = ["Delete account", "Pay now", "Delete account", "delete"];
+  const want = ["Delete account", "Pay now", "Delete account", "delete", "Delete trash", "Delete", "$49 Buy now"];
   ok(JSON.stringify(btns) === JSON.stringify(want), `icon-only and value buttons are named (got ${JSON.stringify(btns)})`);
 
   // Show-password toggle after the read: still secret on the next read.
@@ -99,6 +99,16 @@ try {
   const companyRef = f2[ids.indexOf("company")].ref;
   r = await call({ type: MSG.CS_ACT, action: "type", ref: companyRef, text: "Acme", submit: false });
   ok(r && r.ok === true && r.typed === "Acme", "a plain field needs neither flag");
+
+  // XHTML: tagName is lower-case there; a prefilled password must still not
+  // become its own name.
+  const xp = await browser.newPage();
+  await xp.route("**/*", (rt) => rt.fulfill({ status: 200, contentType: "application/xhtml+xml", body: `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><input type="password" value="XHTML-Secret-1"/></body></html>` }));
+  await xp.goto("https://x.test/");
+  await xp.evaluate(() => { window.chrome = { runtime: { onMessage: { addListener(fn) { window.__cs = fn; } }, sendMessage() {}, id: "test" } }; });
+  await xp.evaluate((code) => (0, eval)(code), cs); // XHTML has no <head> for addScriptTag
+  const xr = await xp.evaluate((m) => new Promise((r) => { const ret = window.__cs(m, {}, r); if (ret !== true && ret !== undefined) r(ret); }), { type: MSG.CS_READ_PAGE });
+  ok(xr && Array.isArray(xr.elements) && xr.elements.length === 1 && !/XHTML-Secret-1/.test(JSON.stringify(xr.elements)), "XHTML: a prefilled password's value is not in the read");
 } finally {
   await browser.close();
 }
