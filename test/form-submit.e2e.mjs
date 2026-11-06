@@ -66,6 +66,8 @@ for (const [name, html] of Object.entries(CASES)) {
 const GUARDS = {
   keypressGuard: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note" onkeypress="if(event.key==='Enter')event.preventDefault()"><button type="submit">Save note</button></form>`,
   disabledDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" disabled>Save note</button></form>`,
+  normal: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit">Save note</button></form>`,
+  imageDefault: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><input type="image" alt="Save note" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></form>`,
   clickCancels: `<form id="co" ${ORDER}><label for="note">Gift note</label><input id="note" name="note"><button type="submit" onclick="event.preventDefault()">Save note</button></form>`,
 };
 for (const [name, html] of Object.entries(GUARDS)) {
@@ -76,8 +78,10 @@ for (const [name, html] of Object.entries(GUARDS)) {
   await chrome.tabs.sendMessage(7, { type: "cs_read_page" });
   const res = await chrome.tabs.sendMessage(7, { type: "cs_act", action: "type", ref: noteRef(), text: "hi", submit: true });
   const ordered = await page.evaluate(() => window.__ordered || 0);
-  console.log(`${name.padEnd(28)} ok=${res.ok} ordered=${ordered}${ordered ? "   <-- SUBMITTED ANYWAY" : ""}`);
-  if (ordered || !res.ok) __bad++;
+  // The two control rows must submit exactly once; the guards never.
+  const want = name === "normal" || name === "imageDefault" ? 1 : 0;
+  console.log(`${name.padEnd(28)} ok=${res.ok} submitted=${res.submitted} ordered=${ordered}${ordered !== want ? `   <-- WANTED ${want}` : ""}`);
+  if (ordered !== want || !res.ok || res.submitted !== (want === 1)) __bad++;
 }
 await browser.close();
 console.log(__bad ? `\n${__bad} FORM-SUBMIT CASE(S) FAILED` : "\nALL FORM-SUBMIT CHECKS PASSED");

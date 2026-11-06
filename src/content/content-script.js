@@ -66,9 +66,23 @@
       (c) => c.form === form && (c.tagName === "BUTTON" || /^(submit|image|button)$/i.test(c.type)),
     );
   }
+  // The same lists for every form at once: one pass over the page per read,
+  // not one per form (a page with 1000 small forms).
+  let formButtonMap = null;
+  function formButtonsCached(form) {
+    if (!formButtonMap) {
+      formButtonMap = new Map();
+      for (const c of document.querySelectorAll("button,input")) {
+        if (!c.form || !(c.tagName === "BUTTON" || /^(submit|image|button)$/i.test(c.type))) continue;
+        if (!formButtonMap.has(c.form)) formButtonMap.set(c.form, []);
+        formButtonMap.get(c.form).push(c);
+      }
+    }
+    return formButtonMap.get(form) || [];
+  }
   function formButtonLabels(form) {
     if (formLabelCache.has(form)) return formLabelCache.get(form);
-    const btns = formButtons(form);
+    const btns = formButtonsCached(form);
     const dflt = btns.find((c) => c.type === "submit" || c.type === "image");
     const names = [];
     for (const c of dflt ? [dflt, ...btns.filter((b) => b !== dflt)] : btns) {
@@ -84,6 +98,7 @@
 
   function readPage(query) {
     formLabelCache = new WeakMap();
+    formButtonMap = null;
     refMap = new Map();
     refCounter = 0;
 
@@ -226,7 +241,15 @@
     return text.trim().replace(/\s+/g, " ");
   }
 
-  function accessibleName(el, textOf = (node) => node.textContent) {
+  // A node's text without what fields inside it hold: a <textarea>'s text is
+  // its prefilled (or framework-synced) value, never a label.
+  function ownText(node) {
+    let s = "";
+    const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    for (let t = w.nextNode(); t; t = w.nextNode()) if (!(t.parentElement && t.parentElement.closest("textarea"))) s += t.data;
+    return s;
+  }
+  function accessibleName(el, textOf = ownText) {
     const aria = el.getAttribute("aria-label");
     if (aria) return aria.trim();
     const labelledby = el.getAttribute("aria-labelledby");
@@ -235,29 +258,37 @@
         .split(/\s+/)
         .map((id) => document.getElementById(id))
         .filter(Boolean)
-        .map((n) => n.textContent.trim());
+        .map((n) => ownText(n).trim());
       if (parts.length) return parts.join(" ");
     }
     if (el.id) {
       const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (lbl) return lbl.textContent.trim();
+      if (lbl) return ownText(lbl).trim();
     }
     const closestLabel = el.closest("label");
-    if (closestLabel) return closestLabel.textContent.trim();
+    if (closestLabel) return ownText(closestLabel).trim();
     const text = (textOf(el) || "").trim().replace(/\s+/g, " ");
-    if (text) return text;
-    // An icon-only button: <button><img alt="Delete"></button>.
-    const icon = el.querySelector && el.querySelector("img[alt],svg[aria-label],[role=img][aria-label]");
-    const iconName = icon ? icon.getAttribute("aria-label") || icon.getAttribute("alt") || "" : "";
-    // A value attribute names only a button; on a field it is the field's
-    // contents (an autofilled or prefilled password, say).
-    const isButtonInput = el.tagName === "INPUT" && /^(submit|button|reset|image)$/i.test(el.type);
+    // Icon labels inside it: <button><img alt="Delete"></button>, or an emoji
+    // in <span role=img aria-label="Delete">. Every non-empty one, so a
+    // decorative alt="" or a product photo doesn't hide "Buy now".
+    const icons = el.querySelectorAll
+      ? Array.from(el.querySelectorAll("img[alt],svg[aria-label],[role=img][aria-label]"))
+          .map((i) => (i.getAttribute("aria-label") || i.getAttribute("alt") || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 120)
+      : "";
+    if (text && (/[\p{L}\p{N}]/u.test(text) || !icons)) return text;
+    // A field's value attribute is its contents (an autofilled or prefilled
+    // password, say), never its name; on a button it is the label.
+    const isField = el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(submit|button|reset|image)$/i.test(el.type));
     return (
+      icons ||
       el.getAttribute("placeholder") ||
       el.getAttribute("title") ||
       el.getAttribute("alt") ||
-      iconName ||
-      (isButtonInput ? el.getAttribute("value") : "") ||
+      (isField ? "" : el.getAttribute("value")) ||
+      text ||
       ""
     ).trim();
   }
@@ -543,6 +574,7 @@
     } else {
       return { ok: false, error: `Element ${tag} is not typable.` };
     }
+    let submitted = false;
     if (submit) {
       const key = { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13, which: 13 };
       let handled = !el.dispatchEvent(new KeyboardEvent("keydown", key));
@@ -553,16 +585,23 @@
       // one does nothing), else submit the form itself.
       if (form && !handled) {
         const dflt = formButtons(form).find((c) => c.type === "submit" || c.type === "image");
+        // Report a submission only if the form really fired one.
+        const seen = () => (submitted = true);
+        form.addEventListener("submit", seen, true);
         try {
           if (dflt) {
-            if (!dflt.disabled) dflt.click();
+            if (!dflt.matches(":disabled")) dflt.click();
           } else HTMLFormElement.prototype.requestSubmit.call(form);
         } catch {
           /* ignore */
         }
+        form.removeEventListener("submit", seen, true);
       }
     }
-    return { ok: true, typed: isSecretField(el) ? "(hidden)" : text.slice(0, 80), submitted: !!submit };
+    const out = { ok: true, typed: isSecretField(el) ? "(hidden)" : text.slice(0, 80), submitted };
+    // The page took the Enter key itself: it may or may not have submitted.
+    if (submit && !submitted) out.note = "Enter was pressed; the page handled it or nothing was submitted. Read the page to see what happened.";
+    return out;
   }
 
   function select(el, value) {

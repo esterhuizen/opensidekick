@@ -53,13 +53,14 @@ const CASES = [
   ["step2", `<label for="step2">Step 2: Security code <a href="#">Never received one?</a></label><input id="step2">`, true],
   // A prefilled secret with no label: its value must not become its name.
   ["prefill", `<input id="prefill" type="password" value="OldWifi-Secret-1">`, true],
+  ["prefillta", `<label for="prefillta">Backup codes</label><textarea id="prefillta" name="password">S3cret-TA-1</textarea>`, true],
   ["prefillcc", `<input id="prefillcc" autocomplete="cc-number" value="4111 1111 1111 1111">`, true],
 ];
 
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
-  await page.setContent(`<!doctype html><body>${CASES.map(([, h]) => `<div>${h}</div>`).join("\n")}<button><img alt="Delete account" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></body>`);
+  await page.setContent(`<!doctype html><body>${CASES.map(([, h]) => `<div>${h}</div>`).join("\n")}<button><img alt="Delete account" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button><button><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><svg aria-label="Pay now"></svg></button><button><span role="img" aria-label="Delete account">🗑️</span></button><button name="op" value="delete"><svg></svg></button></body>`);
   await page.evaluate(() => {
     window.chrome = { runtime: { onMessage: { addListener(fn) { window.__cs = fn; } }, sendMessage() {}, id: "test" } };
   });
@@ -74,9 +75,10 @@ try {
   for (const [id, , want] of CASES) ok(!!(el[id] && el[id].secret) === want, `${id}: ${want ? "secret" : "plain"}`);
 
   const leak = JSON.stringify(read.elements || []);
-  ok(!/OldWifi-Secret-1|4111 1111/.test(leak), "a prefilled secret's value is not in the read (not as its name either)");
-  const icon = (read.elements || []).find((e) => e.tag === "button");
-  ok(icon && icon.name === "Delete account", `an icon-only button is named by its image (got ${JSON.stringify(icon && icon.name)})`);
+  ok(!/OldWifi-Secret-1|4111 1111|S3cret-TA-1/.test(leak), "a prefilled secret's value is not in the read (not as its name either)");
+  const btns = (read.elements || []).filter((e) => e.tag === "button").map((e) => e.name);
+  const want = ["Delete account", "Pay now", "Delete account", "delete"];
+  ok(JSON.stringify(btns) === JSON.stringify(want), `icon-only and value buttons are named (got ${JSON.stringify(btns)})`);
 
   // Show-password toggle after the read: still secret on the next read.
   await page.evaluate(() => { document.getElementById("toggle").type = "text"; });
