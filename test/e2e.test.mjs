@@ -326,8 +326,10 @@ function decide(messages) {
 
   // Injection flag (B): navigate to a hostile page and read it.
   if (/suspicious|injection|hostile|notice page/.test(firstUser)) {
-    if (n === 0) return { kind: "tool", name: "navigate", args: { url: `${BASE1}/injected` } };
-    if (n === 1) return { kind: "tool", name: "get_page_text", args: {} };
+    // The start-page note sends the first move to another site back once.
+    const k = /^Not yet:/.test(parsed[0]?.error || "") ? 1 : 0;
+    if (n === k) return { kind: "tool", name: "navigate", args: { url: `${BASE1}/injected` } };
+    if (n === k + 1) return { kind: "tool", name: "get_page_text", args: {} };
     const flagged = parsed.some((p) => p.suspected_injection === true);
     return { kind: "text", text: `injection_flagged=${flagged}` };
   }
