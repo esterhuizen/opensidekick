@@ -3,7 +3,7 @@
 All notable changes to OpenSidekick are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.6.2] — 2026-11-07
 
 ### Changed
 
