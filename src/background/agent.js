@@ -835,8 +835,10 @@ export async function runAgent(deps) {
 
       // (B) Track the observed origin and flag suspected prompt injection so the
       // model treats page instructions as data, not commands.
-      if (toolResult && toolResult.ok !== false && (FOCUS_TOOLS.has(call.name) || (/^(read_page|get_page_text|take_screenshot)$/.test(call.name) &&
-        (focusedTabId === initialTabId || siteKey(toolResult.url) === startKey)))) {
+      // Any read of the start tab counts, even one that failed: a page Chrome
+      // keeps every extension out of (the Web Store) can't be read at all.
+      const readTool = /^(read_page|get_page_text|take_screenshot)$/.test(call.name);
+      if ((readTool && focusedTabId === initialTabId) || (toolResult && toolResult.ok !== false && (FOCUS_TOOLS.has(call.name) || (readTool && siteKey(toolResult.url) === startKey)))) {
         startUnread = false;
         startBounceStep = -1; // looked (or moved to a tab the agent chose): stop sending calls back
       }

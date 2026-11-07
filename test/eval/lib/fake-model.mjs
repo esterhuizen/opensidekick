@@ -170,6 +170,9 @@ export function decide(script, items, facts) {
   const countSub = (k, sub) => calls.filter((c) => { const p = parseId(c.id); return p.k === k && p.sub === sub; }).length;
 
   let k = !lp ? 0 : lp.sub === "x" ? lp.k + 1 : lp.k;
+  // A refused click/type/select (say, the element changed since the read) is
+  // tried again after a fresh read, up to 3 times, like a real model would.
+  if (lp && lp.sub === "x" && lastRes && lastRes.ok === false && /^(click_element|type_text|select_option)$/.test(last.name) && countSub(lp.k, "x") < 3) k = lp.k;
   let fresh = last && last.name === "read_page" && lastRes && lastRes.ok !== false ? lastRes : null;
 
   for (;;) {
