@@ -67,6 +67,10 @@ genuinely agentic, and usable with any LLM — including fully local models.**
 - **Optional developer tools** — read the page's console messages and network
   requests to debug ("why is this page erroring?"), and a run-JavaScript escape
   hatch for when the other tools aren't enough. Both opt-in in Settings.
+- **Native mouse input (opt-in, Chromium)** — send trusted browser pointer
+  events to labelled controls using the existing element refs. The original
+  DOM actions remain the fallback. The debugger banner appears during a task,
+  and site permissions and sensitive-action confirmations still apply.
 - **Multi-tab** — list, open, and switch tabs to complete a task.
 - **Any provider, any model** via two protocols:
   - OpenAI-compatible (`/chat/completions`): OpenRouter, OpenAI, Google Gemini,
@@ -366,7 +370,7 @@ Shipped since the first cut:
 
 Planned, to reach and exceed feature parity with vendor-locked assistants:
 
-- [ ] CDP-based trusted input for tougher sites
+- [x] Opt-in CDP trusted input for ref-based mouse actions
 - [ ] Firefox (WebExtensions) build
 
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
