@@ -2,9 +2,9 @@
 // active tab. Tool schemas are provider-agnostic (plain JSON Schema); the
 // provider layer converts them to the right wire format.
 
-import { normalizeTarget } from "./permissions.js";
+import { normalizeTarget, originOf } from "./permissions.js";
 import { MSG } from "../common/constants.js";
-import { readConsole, readNetwork } from "./cdp.js";
+import { readConsole, readNetwork, cdpAvailable, dispatchMouseAction } from "./cdp.js";
 
 // The page list is the product's claim about the engine, so it has one owner here.
 export const RESTRICTED_PAGE_HINT =
@@ -317,7 +317,7 @@ export async function executeTool(name, args, ctx) {
     case "get_page_text":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_GET_TEXT });
     case "click_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "click", ref: args.ref });
+      return await nativeMouseAction(ctx, "click", args.ref);
     case "type_text":
       return await csSend(await ctx.getTabId(), {
         type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
@@ -336,13 +336,13 @@ export async function executeTool(name, args, ctx) {
         value: args.value,
       });
     case "hover_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "hover", ref: args.ref });
+      return await nativeMouseAction(ctx, "hover", args.ref);
     case "double_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "dblclick", ref: args.ref });
+      return await nativeMouseAction(ctx, "dblclick", args.ref);
     case "right_click":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "contextmenu", ref: args.ref });
+      return await nativeMouseAction(ctx, "contextmenu", args.ref);
     case "drag_element":
-      return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "drag", ref: args.from_ref, toRef: args.to_ref });
+      return await nativeMouseAction(ctx, "drag", args.from_ref, args.to_ref);
     case "press_keys":
       return await csSend(await ctx.getTabId(), { type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits, expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard, action: "keys", keys: args.keys, ref: args.ref });
     case "upload_file":
@@ -440,6 +440,56 @@ async function csSend(tabId, { guard, ...msg }) {
     return res ?? { ok: false, error: "No response from page." };
   } catch (e) {
     return { ok: false, error: RESTRICTED_PAGE_HINT };
+  }
+}
+
+// Alternative dispatch for existing ref-based tools, never arbitrary model coordinates.
+// Agent permission, sensitive-action and label checks run before executeTool().
+async function nativeMouseAction(ctx, action, ref, toRef = null) {
+  const tabId = await ctx.getTabId();
+  const msg = {
+    type: MSG.CS_ACT, expect: ctx.expect, expectSubmits: ctx.expectSubmits,
+    expectPaymentStep: ctx.expectPaymentStep, guard: ctx.guard,
+    action, ref, ...(toRef == null ? {} : { toRef }),
+  };
+  const fallback = () => csSend(tabId, msg);
+  if (ctx.enableNativeInput !== true || !cdpAvailable()) return fallback();
+
+  const start = await csSend(tabId, { ...msg, action: "target", nativeAction: action });
+  if (!start?.ok) return start;
+  let end = null;
+  if (action === "drag") {
+    end = await csSend(tabId, {
+      ...msg, action: "target", nativeAction: "hover", ref: toRef,
+      expect: ctx.expectTo, expectSubmits: ctx.expectToSubmits,
+    });
+    if (!end?.ok) return end;
+  }
+  // A permission card approves an origin, not whatever the tab navigated to.
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || !ctx.nativeOrigin || originOf(tab.pendingUrl || tab.url) !== ctx.nativeOrigin) {
+    return { ok: false, error: "The page changed since approval. Call read_page again." };
+  }
+  try {
+    await dispatchMouseAction(tabId, action, start, end);
+    const key = { click: "clicked", hover: "hovered", dblclick: "doubleClicked", contextmenu: "rightClicked", drag: "dragged" }[action];
+    const obstructed = !!(start.obstructed || end?.obstructed);
+    return {
+      ok: true, [key]: action === "drag" ? true : start.target, trusted_input: true,
+      ...(obstructed ? { obstructed: true,
+        note: "The target is covered by another element; Chromium may have delivered input to the covering element." } : {}),
+    };
+  } catch (error) {
+    // Don't replay a potentially executed click, submit, or partial drag.
+    if (error.nativeInputMayHaveFired) {
+      return { ok: false, error: "Native input may have partially executed: " + (error.message || error),
+        note: "DOM fallback was not attempted to avoid repeating an action." };
+    }
+    const dom = await fallback();
+    return dom?.ok
+      ? { ...dom, trusted_input: false, input_fallback: "dom", native_input_error: String(error.message || error),
+        ...(start.obstructed ? { obstructed: true } : {}) }
+      : dom;
   }
 }
 
