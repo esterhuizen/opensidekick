@@ -639,6 +639,10 @@ function wireSettings() {
     config.settings.enableExternal = box.checked;
     persist();
   });
+  $("#enable-native-input").addEventListener("change", (e) => {
+    config.settings.enableNativeInput = e.target.checked;
+    persist();
+  });
   $("#enable-cdp").addEventListener("change", (e) => {
     config.settings.enableCdp = e.target.checked;
     persist();
@@ -660,6 +664,8 @@ function renderSettings() {
   $("#enable-vision").checked = !!s.enableVision;
   $("#enable-js").checked = !!s.enableJsTool;
   $("#enable-cdp").checked = !!s.enableCdp;
+  $("#enable-native-input").checked = s.enableNativeInput === true;
+  renderToolRow("#enable-native-input", "#native-input-hint", cdpAvailable(), "Native mouse input is unavailable in Firefox.");
   // Dead setting on Firefox: no chrome.debugger, so a box the user can turn on would promise a tool that never runs.
   renderToolRow("#enable-cdp", "#cdp-hint", cdpAvailable(), CDP_HINT);
   // Dead on Firefox: world: "MAIN" scripting works from 128, so this is AMO's remote-code policy, not a missing API.

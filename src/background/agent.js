@@ -241,6 +241,8 @@ export async function runAgent(deps) {
     groupTab,
     getGroupId,
     known: new Set([initialTabId]),
+    // Existing ref tools only; all original permission checks run first.
+    enableNativeInput: s.enableNativeInput === true && cdpAvailable(),
     // A password, card or code field may only get a value the user typed.
     secretOk: (text) => userGave(conversation, text),
   };
@@ -797,10 +799,14 @@ export async function runAgent(deps) {
         ctx.secretConfirmed = secretConfirmed;
         // The page must still show what the gate judged: refuse a ref whose
         // label changed since the read (an SPA turning Continue into Pay).
-        const seen = runArgs && lastElements.has(runArgs.ref) && call.name !== "scroll" ? runArgs.ref : null;
+        const primaryRef = call.name === "drag_element" ? runArgs.from_ref : runArgs?.ref;
+        const seen = runArgs && lastElements.has(primaryRef) && call.name !== "scroll" ? primaryRef : null;
         ctx.expect = seen != null ? lastElements.get(seen) : undefined;
         ctx.expectSubmits = seen != null ? lastSubmits.has(seen) : undefined;
         ctx.expectPaymentStep = seen != null ? lastPaymentStep : undefined;
+        ctx.expectTo = call.name === "drag_element" ? lastElements.get(runArgs.to_ref) : undefined;
+        ctx.expectToSubmits = call.name === "drag_element" ? lastSubmits.has(runArgs.to_ref) : undefined;
+        ctx.nativeOrigin = observedOrigin || originOf(await tabUrl(focusedTabId));
         toolResult = await executeTool(call.name, runArgs, ctx);
       } catch (e) {
         toolResult = { ok: false, error: String(e.message || e) };
@@ -809,6 +815,9 @@ export async function runAgent(deps) {
       ctx.expect = undefined;
       ctx.expectSubmits = undefined;
       ctx.expectPaymentStep = undefined;
+      ctx.expectTo = undefined;
+      ctx.expectToSubmits = undefined;
+      ctx.nativeOrigin = undefined;
       if (hideForShot) await setOverlay(focusedTabId, "show", overlayLabel);
 
       // A tool that returns an image (screenshot) can't carry it in an OpenAI
@@ -1055,7 +1064,7 @@ function summarizeResult(name, r) {
     case "get_page_text":
       return `read ${r.text ? r.text.length : 0} chars of text`;
     case "click_element":
-      return `clicked ${r.clicked || ""}`;
+      return `clicked ${r.clicked || ""}${r.obstructed ? " (target obstructed)" : ""}${r.trusted_input ? " [trusted]" : r.input_fallback ? " [DOM fallback]" : ""}`;
     case "type_text":
       return `typed "${(r.typed || "").slice(0, 40)}"${r.submitted ? " and submitted" : ""}`;
     case "select_option":
