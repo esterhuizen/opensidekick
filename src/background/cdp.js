@@ -75,6 +75,53 @@ export async function readNetwork(tabId, opts = {}) {
   };
 }
 
+// Native pointer events for an already approved, ref-based action.
+// The model never gets a coordinate tool; tools.js resolves labelled DOM refs.
+export async function dispatchMouseAction(tabId, action, point, destination = null) {
+  if (!cdpAvailable()) throw new Error("Native mouse input is unavailable in this browser.");
+  const valid = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+  if (!valid(point) || (action === "drag" && !valid(destination))) throw new Error("Invalid element coordinates.");
+  if (!["click", "hover", "dblclick", "contextmenu", "drag"].includes(action)) throw new Error("Unsupported mouse action.");
+  await ensureAttached(tabId);
+  const send = (type, p, button = "none", buttons = 0, clickCount = 0) =>
+    sendCommand(tabId, "Input.dispatchMouseEvent", { type, x: p.x, y: p.y, button, buttons, clickCount });
+  let started = false, held = false, position = point;
+  try {
+    await send("mouseMoved", point);
+    if (action === "hover") return { ok: true, trusted_input: true };
+    const button = action === "contextmenu" ? "right" : "left";
+    const buttons = action === "contextmenu" ? 2 : 1;
+    if (action === "drag") {
+      started = true; // the browser might execute even if its reply fails
+      await send("mousePressed", point, "left", 1, 1);
+      held = true;
+      for (let i = 1; i <= 8; i++) {
+        const t = i / 8;
+        position = { x: point.x + (destination.x - point.x) * t, y: point.y + (destination.y - point.y) * t };
+        await send("mouseMoved", position, "left", 1);
+      }
+      await send("mouseReleased", destination, "left", 0, 1);
+      held = false;
+    } else {
+      const count = action === "dblclick" ? 2 : 1;
+      for (let i = 1; i <= count; i++) {
+        started = true;
+        await send("mousePressed", point, button, buttons, i);
+        held = true;
+        await send("mouseReleased", point, button, 0, i);
+        held = false;
+      }
+    }
+    return { ok: true, trusted_input: true };
+  } catch (error) {
+    // Never replay a possibly executed click/submit via the DOM fallback.
+    if (started) error.nativeInputMayHaveFired = true;
+    throw error;
+  } finally {
+    if (held) await send("mouseReleased", position, action === "contextmenu" ? "right" : "left", 0).catch(() => {});
+  }
+}
+
 // Called at the end of every task so the debugger banner goes away.
 export async function detachAll() {
   if (!cdpAvailable()) return;
