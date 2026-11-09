@@ -1239,6 +1239,32 @@ async function main() {
     const agreeClicks = await testPage.evaluate(() => window.__clicks.agree || 0);
     check(agreed === true && agreeClicks === 1, `click: the checkbox is checked after one click (checked=${agreed}, click events=${agreeClicks})`);
 
+    // --- Native CDP input is opt-in; the default DOM path was checked above. ---
+    // A browser-generated click has isTrusted=true; synthetic events do not.
+    await testPage.evaluate(() => {
+      document.querySelector("#agree").checked = false;
+      window.__trustedAgree = [];
+      document.querySelector("#agree").addEventListener("click", (e) => window.__trustedAgree.push(e.isTrusted), { once: true });
+    });
+    await optPage.evaluate(async (key) => {
+      const cfg = (await chrome.storage.local.get(key))[key];
+      cfg.settings.enableNativeInput = true;
+      await chrome.storage.local.set({ [key]: cfg });
+    }, STORAGE_KEY);
+    try {
+      const native = await drive("Tick the agree box.");
+      const trusted = await testPage.evaluate(() => ({ events: window.__trustedAgree, checked: document.querySelector("#agree").checked }));
+      check(trusted.events.length === 1 && trusted.events[0] === true && trusted.checked === true,
+        `native: CDP generates exactly one trusted click (got ${JSON.stringify(trusted)})`);
+      check(toolsOf(native.events).includes("click_element"), "native: uses the existing ref-based click_element tool");
+    } finally {
+      await optPage.evaluate(async (key) => {
+        const cfg = (await chrome.storage.local.get(key))[key];
+        cfg.settings.enableNativeInput = false;
+        await chrome.storage.local.set({ [key]: cfg });
+      }, STORAGE_KEY);
+    }
+
     // --- 0.5.0 long tasks: a progress report mid-task doesn't end the run ---
     nudgeCount = 0;
     const lj = await drive("Do this long job with check-ins.");
