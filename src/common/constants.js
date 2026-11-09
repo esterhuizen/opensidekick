@@ -217,6 +217,8 @@ export const DEFAULT_SETTINGS = {
   enableJsTool: false,
   // Expose console/network reading via Chrome's debugger (shows a banner).
   enableCdp: false,
+  // Trusted browser pointer events for element refs; always off by default.
+  enableNativeInput: false,
   // Let local agents (Claude Code, Codex, …) use the browser tools through the
   // native bridge. Connections, new sites and risky actions are approved in the side panel.
   enableExternal: false,
