@@ -196,6 +196,15 @@
           </div>
 
           <div class="field">
+            <label class="radio"><input type="checkbox" id="enable-native-input" /> Use native browser mouse input <span class="chip warn">opt-in</span></label>
+            <p class="hint" id="native-input-hint">Trusted pointer events for element refs, with the original DOM fallback.</p>
+            <details class="more">
+              <summary>Learn more</summary>
+              <p class="hint">Uses Chrome's debugger, which shows the debugging banner while a task runs. Element labels, per-site permissions and sensitive-action confirmations still apply. No coordinate tools or cross-origin iframe injection.</p>
+            </details>
+          </div>
+
+          <div class="field">
             <label class="radio"><input type="checkbox" id="enable-cdp" /> Enable console &amp; network reading <span class="chip warn">debugger banner</span></label>
             <p class="hint" id="cdp-hint">Adds read_console and read_network for debugging pages.</p>
             <details class="more">
