@@ -406,6 +406,7 @@
 
   function act(msg) {
     if (msg.action === "scroll") return scroll(msg);
+    const effectiveAction = msg.action === "target" ? msg.nativeAction : msg.action;
     const el = refMap.get(msg.ref);
     if (!el) {
       return {
@@ -424,7 +425,7 @@
     }
     // The caller judged this on a page that wasn't the payment step: if it is
     // now (a saved card rendered late, or an SPA moved on), read it again first.
-    if (msg.expectPaymentStep === false && (msg.action === "click" || msg.action === "dblclick" || msg.action === "keys" || (msg.action === "type" && msg.submit)) && paymentStepOnPage()) {
+    if (msg.expectPaymentStep === false && (effectiveAction === "click" || effectiveAction === "dblclick" || effectiveAction === "keys" || (effectiveAction === "type" && msg.submit)) && paymentStepOnPage()) {
       return { ok: false, error: `The page now asks for or shows payment details. Call read_page again before acting.` };
     }
     try {
@@ -433,6 +434,8 @@
       /* ignore */
     }
     switch (msg.action) {
+      case "target":
+        return targetPoint(el, effectiveAction);
       case "click":
         return click(el);
       case "type":
@@ -460,6 +463,32 @@
       default:
         return { ok: false, error: `Unknown action ${msg.action}` };
     }
+  }
+
+  // Preflight for CDP. act() checks the current element label and payment step
+  // before disclosing a point. Only top-document refs can reach this path.
+  function targetPoint(el, action) {
+    if (!["click", "hover", "dblclick", "contextmenu", "drag"].includes(action)) {
+      return { ok: false, error: "Unsupported native mouse action." };
+    }
+    if (action === "dblclick") {
+      const tag = el.localName;
+      if (tag === "button" || tag === "a" || /^(button|link|menuitem)$/i.test(el.getAttribute("role") || "") || (tag === "input" && /^(submit|button|image|reset)$/i.test(el.type))) {
+        return { ok: false, error: "That is a button or link: use click_element. A double click would press it twice." };
+      }
+    }
+    const r = el.getBoundingClientRect();
+    const left = Math.max(0, r.left), right = Math.min(window.innerWidth, r.right);
+    const top = Math.max(0, r.top), bottom = Math.min(window.innerHeight, r.bottom);
+    if (right <= left || bottom <= top) return { ok: false, error: "Element is outside the visible viewport." };
+    const xs = [(left + right) / 2, left + (right - left) / 4, right - (right - left) / 4];
+    const ys = [(top + bottom) / 2, top + (bottom - top) / 4, bottom - (bottom - top) / 4];
+    const target = accessibleName(el).slice(0, 80) || el.tagName.toLowerCase();
+    for (const y of ys) for (const x of xs) {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && (el === hit || el.contains(hit))) return { ok: true, x, y, target };
+    }
+    return { ok: true, x: xs[0], y: ys[0], target, obstructed: true };
   }
 
   function hover(el) {
